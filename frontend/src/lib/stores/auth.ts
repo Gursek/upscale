@@ -4,6 +4,8 @@ interface User {
     id: number;
     email: string;
     business_name: string;
+    business_address?: string | null;
+    tin?: string | null;
     vat_status: string;
     sells_meat: boolean;
     sells_retail: boolean;

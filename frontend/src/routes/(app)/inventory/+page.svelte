@@ -12,24 +12,48 @@
     import {
         Plus, Pencil, Archive, RotateCcw, Trash2,
         Loader2, ArrowLeft, Package, AlertTriangle,
-        Search
+        Search, PackagePlus, SlidersHorizontal, History
     } from "lucide-svelte";
+
+    interface HistoryEntry {
+        id: number;
+        action: string;
+        product_id: number;
+        product_name: string;
+        unit: string;
+        before_stock: number | null;
+        after_stock: number | null;
+        quantity_added?: number;
+        adjustment_delta?: number;
+        reason?: string;
+        notes?: string;
+        reverted: boolean;
+        created_at: string;
+    }
 
     // --- State ---
     let products = $state<any[]>([]);
     let archivedProducts = $state<any[]>([]);
+    let history = $state<HistoryEntry[]>([]);
     let loading = $state(true);
+    let historyLoading = $state(false);
     let error = $state("");
     let successMessage = $state("");
     let searchQuery = $state("");
-    let activeTab = $state<"active" | "archived">("active");
+    let activeTab = $state<"active" | "archived" | "history">("active");
 
     // --- Dialog state ---
     let productDialogOpen = $state(false);
     let archiveDialogOpen = $state(false);
     let deleteDialogOpen = $state(false);
+    let restockDialogOpen = $state(false);
+    let adjustDialogOpen = $state(false);
     let selectedProduct = $state<any>(null);
     let isEditing = $state(false);
+    let restockQuantity = $state("");
+    let restockNotes = $state("");
+    let adjustQuantity = $state("");
+    let adjustReason = $state("");
 
     // --- Form state ---
     let form = $state({
@@ -82,6 +106,98 @@
             loading = false;
         }
     }
+
+    async function loadHistory() {
+        historyLoading = true;
+        try {
+            history = await apiJson<HistoryEntry[]>("/inventory/history?limit=50");
+        } catch {
+            error = "Failed to load history";
+        } finally {
+            historyLoading = false;
+        }
+    }
+
+    async function switchTab(tab: "active" | "archived" | "history") {
+        activeTab = tab;
+        if (tab === "history") await loadHistory();
+    }
+
+    function openRestockDialog(product: any) {
+        selectedProduct = product;
+        restockQuantity = "";
+        restockNotes = "";
+        restockDialogOpen = true;
+    }
+
+    function openAdjustDialog(product: any) {
+        selectedProduct = product;
+        adjustQuantity = String(product.stock_quantity);
+        adjustReason = "";
+        adjustDialogOpen = true;
+    }
+
+    async function restockProduct() {
+        const qty = parseFloat(restockQuantity);
+        if (!qty || qty <= 0) {
+            flash("Enter a valid quantity", true);
+            return;
+        }
+        try {
+            await apiJson("/inventory/restock", {
+                method: "POST",
+                body: JSON.stringify({
+                    product_id: selectedProduct.id,
+                    quantity: qty,
+                    notes: restockNotes.trim() || null,
+                }),
+            });
+            flash(`Restocked ${selectedProduct.name}`);
+            restockDialogOpen = false;
+            await loadProducts();
+        } catch (e: any) {
+            flash(e.message, true);
+        }
+    }
+
+    async function adjustProduct() {
+        const newQty = parseFloat(adjustQuantity);
+        if (isNaN(newQty) || newQty < 0) {
+            flash("Enter a valid stock quantity", true);
+            return;
+        }
+        if (!adjustReason.trim()) {
+            flash("Reason is required", true);
+            return;
+        }
+        try {
+            await apiJson("/inventory/adjust", {
+                method: "POST",
+                body: JSON.stringify({
+                    product_id: selectedProduct.id,
+                    new_quantity: newQty,
+                    reason: adjustReason.trim(),
+                }),
+            });
+            flash(`Adjusted stock for ${selectedProduct.name}`);
+            adjustDialogOpen = false;
+            await loadProducts();
+        } catch (e: any) {
+            flash(e.message, true);
+        }
+    }
+
+    function formatStock(value: number | null | undefined, unit: string) {
+        if (value == null) return "—";
+        return `${Number(value).toFixed(unit === "kg" ? 3 : 0)} ${unit}`;
+    }
+
+    const actionLabels: Record<string, string> = {
+        restock: "Restock",
+        adjustment: "Adjustment",
+        sale_deduction: "Sale",
+        void_restock: "Void restock",
+    };
 
     // --- Form helpers ---
     function openCreateDialog() {
@@ -239,7 +355,7 @@
             </div>
             <div class="flex rounded-md border overflow-hidden text-sm">
                 <button
-                    onclick={() => activeTab = "active"}
+                    onclick={() => switchTab("active")}
                     class="px-4 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
                         {activeTab === 'active' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}"
                     aria-pressed={activeTab === "active"}
@@ -247,12 +363,20 @@
                     Active ({products.length})
                 </button>
                 <button
-                    onclick={() => activeTab = "archived"}
+                    onclick={() => switchTab("archived")}
                     class="px-4 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
                         {activeTab === 'archived' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}"
                     aria-pressed={activeTab === "archived"}
                 >
                     Archived ({archivedProducts.length})
+                </button>
+                <button
+                    onclick={() => switchTab("history")}
+                    class="px-4 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                        {activeTab === 'history' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}"
+                    aria-pressed={activeTab === "history"}
+                >
+                    History
                 </button>
             </div>
         </div>
@@ -301,6 +425,16 @@
                                 </div>
                                 <div class="flex items-center gap-1 shrink-0">
                                     <Button variant="ghost" size="icon"
+                                        aria-label="Restock {product.name}"
+                                        onclick={() => openRestockDialog(product)}>
+                                        <PackagePlus class="size-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon"
+                                        aria-label="Adjust stock for {product.name}"
+                                        onclick={() => openAdjustDialog(product)}>
+                                        <SlidersHorizontal class="size-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon"
                                         aria-label="Edit {product.name}"
                                         onclick={() => openEditDialog(product)}>
                                         <Pencil class="size-4" />
@@ -316,8 +450,7 @@
                     </div>
                 {/if}
 
-            {:else}
-                <!-- Archived -->
+            {:else if activeTab === "archived"}
                 {#if filteredArchived.length === 0}
                     <div class="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
                         <Archive class="size-8" />
@@ -350,6 +483,60 @@
                             </div>
                         {/each}
                     </div>
+                {/if}
+
+            {:else}
+                {#if historyLoading}
+                    <div class="flex items-center justify-center h-40">
+                        <Loader2 class="size-6 animate-spin text-muted-foreground" />
+                    </div>
+                {:else if history.length === 0}
+                    <div class="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
+                        <History class="size-8" />
+                        <p class="text-sm">No stock movements yet</p>
+                    </div>
+                {:else}
+                    <ul class="space-y-2" aria-label="Stock movement history">
+                        {#each history as entry (entry.id)}
+                            <li class="bg-background rounded-xl border p-4 {entry.reverted ? 'opacity-60' : ''}">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <p class="font-medium text-sm">{entry.product_name}</p>
+                                            <Badge variant="outline" class="text-xs">
+                                                {actionLabels[entry.action] ?? entry.action}
+                                            </Badge>
+                                            {#if entry.reverted}
+                                                <Badge variant="secondary" class="text-xs">Undone</Badge>
+                                            {/if}
+                                        </div>
+                                        <p class="text-xs text-muted-foreground mt-1">
+                                            {formatStock(entry.before_stock, entry.unit)}
+                                            →
+                                            {formatStock(entry.after_stock, entry.unit)}
+                                            {#if entry.quantity_added}
+                                                <span class="text-green-700"> (+{entry.quantity_added})</span>
+                                            {/if}
+                                            {#if entry.adjustment_delta != null && entry.action === "adjustment"}
+                                                <span class={entry.adjustment_delta >= 0 ? "text-green-700" : "text-destructive"}>
+                                                    ({entry.adjustment_delta >= 0 ? "+" : ""}{entry.adjustment_delta})
+                                                </span>
+                                            {/if}
+                                        </p>
+                                        {#if entry.reason}
+                                            <p class="text-xs text-muted-foreground mt-0.5">Reason: {entry.reason}</p>
+                                        {/if}
+                                        {#if entry.notes}
+                                            <p class="text-xs text-muted-foreground mt-0.5">Notes: {entry.notes}</p>
+                                        {/if}
+                                    </div>
+                                    <p class="text-xs text-muted-foreground shrink-0">
+                                        {new Date(entry.created_at).toLocaleString()}
+                                    </p>
+                                </div>
+                            </li>
+                        {/each}
+                    </ul>
                 {/if}
             {/if}
         {/if}
@@ -442,6 +629,70 @@
             <Button variant="outline" onclick={() => productDialogOpen = false}>Cancel</Button>
             <Button onclick={saveProduct} disabled={!form.name || !form.price}>
                 {isEditing ? "Save Changes" : "Add Product"}
+            </Button>
+        </Dialog.Footer>
+    </Dialog.Content>
+</Dialog.Root>
+
+<!-- Restock Dialog -->
+<Dialog.Root bind:open={restockDialogOpen}>
+    <Dialog.Content class="max-w-sm">
+        <Dialog.Header>
+            <Dialog.Title>Restock {selectedProduct?.name}</Dialog.Title>
+            <Dialog.Description>
+                Current stock: {selectedProduct ? formatStock(selectedProduct.stock_quantity, selectedProduct.unit) : ""}
+            </Dialog.Description>
+        </Dialog.Header>
+        <div class="space-y-4 py-2">
+            <div class="space-y-2">
+                <Label for="restock-qty">Quantity to add</Label>
+                <Input id="restock-qty" type="number" min="0.001" step="0.001"
+                    placeholder="0" bind:value={restockQuantity} />
+            </div>
+            <div class="space-y-2">
+                <Label for="restock-notes">Notes <span class="text-muted-foreground">(optional)</span></Label>
+                <Input id="restock-notes" placeholder="e.g. Delivery from supplier"
+                    bind:value={restockNotes} />
+            </div>
+        </div>
+        <Dialog.Footer>
+            <Button variant="outline" onclick={() => restockDialogOpen = false}>Cancel</Button>
+            <Button onclick={restockProduct} disabled={!restockQuantity}>Restock</Button>
+        </Dialog.Footer>
+    </Dialog.Content>
+</Dialog.Root>
+
+<!-- Adjust Stock Dialog -->
+<Dialog.Root bind:open={adjustDialogOpen}>
+    <Dialog.Content class="max-w-sm">
+        <Dialog.Header>
+            <Dialog.Title>Adjust Stock — {selectedProduct?.name}</Dialog.Title>
+            <Dialog.Description>
+                Set the correct stock level. A reason is required for audit trail.
+            </Dialog.Description>
+        </Dialog.Header>
+        <div class="space-y-4 py-2">
+            <div class="space-y-2">
+                <Label for="adjust-qty">New stock quantity</Label>
+                <Input id="adjust-qty" type="number" min="0" step="0.001"
+                    placeholder="0" bind:value={adjustQuantity} />
+            </div>
+            <div class="space-y-2">
+                <Label for="adjust-reason">Reason</Label>
+                <textarea
+                    id="adjust-reason"
+                    placeholder="e.g. Spoilage, physical count correction..."
+                    bind:value={adjustReason}
+                    rows="2"
+                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                    aria-label="Adjustment reason"
+                ></textarea>
+            </div>
+        </div>
+        <Dialog.Footer>
+            <Button variant="outline" onclick={() => adjustDialogOpen = false}>Cancel</Button>
+            <Button onclick={adjustProduct} disabled={!adjustQuantity || !adjustReason.trim()}>
+                Adjust
             </Button>
         </Dialog.Footer>
     </Dialog.Content>

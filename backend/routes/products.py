@@ -1,0 +1,184 @@
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from datetime import datetime
+import json
+
+from models.db import db
+from models.product import Product
+from models.audit_log import AuditLog
+
+products_bp = Blueprint("products", __name__)
+
+
+def _product_to_dict(p: Product) -> dict:
+    return {
+        "id": p.id,
+        "name": p.name,
+        "category": p.category,
+        "cut_type": p.cut_type,
+        "pricing_type": p.pricing_type,
+        "price": float(p.price),
+        "unit": p.unit,
+        "sku": p.sku,
+        "stock_quantity": float(p.stock_quantity),
+        "low_stock_threshold": float(p.low_stock_threshold),
+        "tax_classification": p.tax_classification,
+        "image_url": p.image_url,
+        "is_active": p.is_active,
+        "is_archived": p.is_archived,
+    }
+
+
+def _default_tax_classification(category: str) -> str:
+    return "exempt" if category in ("beef", "pork", "chicken") else "standard"
+
+
+def _log_action(user_id, entity_id, action, before=None, after=None):
+    entry = AuditLog(
+        user_id=user_id,
+        entity_type="product",
+        entity_id=entity_id,
+        action=action,
+        before_state=json.dumps(before) if before else None,
+        after_state=json.dumps(after) if after else None,
+    )
+    db.session.add(entry)
+
+
+@products_bp.route("/", methods=["GET"])
+@jwt_required()
+def list_products():
+    user_id = int(get_jwt_identity())
+    category = request.args.get("category")
+
+    query = Product.query.filter_by(user_id=user_id, is_archived=False)
+    if category:
+        query = query.filter_by(category=category)
+
+    products = query.order_by(Product.name).all()
+    return jsonify([_product_to_dict(p) for p in products]), 200
+
+
+@products_bp.route("/archived", methods=["GET"])
+@jwt_required()
+def list_archived_products():
+    user_id = int(get_jwt_identity())
+    products = Product.query.filter_by(user_id=user_id, is_archived=True).order_by(Product.archived_at.desc()).all()
+    return jsonify([_product_to_dict(p) for p in products]), 200
+
+
+@products_bp.route("/", methods=["POST"])
+@jwt_required()
+def create_product():
+    user_id = int(get_jwt_identity())
+    data = request.get_json()
+
+    required = ["name", "category", "pricing_type", "price"]
+    if not all(field in data and data[field] not in (None, "") for field in required):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    product = Product(
+        user_id=user_id,
+        name=data["name"],
+        category=data["category"],
+        cut_type=data.get("cut_type"),
+        pricing_type=data["pricing_type"],
+        price=data["price"],
+        unit=data.get("unit", "kg" if data["category"] != "retail" else "pcs"),
+        sku=data.get("sku"),
+        stock_quantity=data.get("stock_quantity", 0),
+        low_stock_threshold=data.get("low_stock_threshold", 0),
+        tax_classification=data.get("tax_classification") or _default_tax_classification(data["category"]),
+        image_url=data.get("image_url"),
+    )
+    db.session.add(product)
+    db.session.flush()  # get product.id before commit
+
+    _log_action(user_id, product.id, "create", after=_product_to_dict(product))
+    db.session.commit()
+
+    return jsonify(_product_to_dict(product)), 201
+
+
+@products_bp.route("/<int:product_id>", methods=["PUT"])
+@jwt_required()
+def update_product(product_id):
+    user_id = int(get_jwt_identity())
+    product = Product.query.filter_by(id=product_id, user_id=user_id).first()
+    if not product:
+        return jsonify({"error": "Product not found"}), 404
+
+    before = _product_to_dict(product)
+    data = request.get_json()
+
+    for field in ["name", "category", "cut_type", "pricing_type", "price", "unit",
+                   "sku", "stock_quantity", "low_stock_threshold", "tax_classification",
+                   "image_url", "is_active"]:
+        if field in data:
+            setattr(product, field, data[field])
+
+    product.updated_at = datetime.utcnow()
+    db.session.flush()
+
+    _log_action(user_id, product.id, "update", before=before, after=_product_to_dict(product))
+    db.session.commit()
+
+    return jsonify(_product_to_dict(product)), 200
+
+
+@products_bp.route("/<int:product_id>/archive", methods=["POST"])
+@jwt_required()
+def archive_product(product_id):
+    user_id = int(get_jwt_identity())
+    product = Product.query.filter_by(id=product_id, user_id=user_id).first()
+    if not product:
+        return jsonify({"error": "Product not found"}), 404
+
+    before = _product_to_dict(product)
+    product.is_archived = True
+    product.archived_at = datetime.utcnow()
+    db.session.flush()
+
+    _log_action(user_id, product.id, "archive", before=before, after=_product_to_dict(product))
+    db.session.commit()
+
+    return jsonify({"message": "Product archived"}), 200
+
+
+@products_bp.route("/<int:product_id>/restore", methods=["POST"])
+@jwt_required()
+def restore_product(product_id):
+    user_id = int(get_jwt_identity())
+    product = Product.query.filter_by(id=product_id, user_id=user_id, is_archived=True).first()
+    if not product:
+        return jsonify({"error": "Archived product not found"}), 404
+
+    before = _product_to_dict(product)
+    product.is_archived = False
+    product.archived_at = None
+    db.session.flush()
+
+    _log_action(user_id, product.id, "restore", before=before, after=_product_to_dict(product))
+    db.session.commit()
+
+    return jsonify({"message": "Product restored"}), 200
+
+
+@products_bp.route("/<int:product_id>", methods=["DELETE"])
+@jwt_required()
+def delete_product(product_id):
+    user_id = int(get_jwt_identity())
+    product = Product.query.filter_by(id=product_id, user_id=user_id).first()
+    if not product:
+        return jsonify({"error": "Product not found"}), 404
+
+    if not product.is_archived:
+        return jsonify({"error": "Product must be archived before permanent deletion"}), 400
+
+    before = _product_to_dict(product)
+    _log_action(user_id, product.id, "delete", before=before)
+
+    db.session.delete(product)
+    db.session.commit()
+
+    return jsonify({"message": "Product permanently deleted"}), 200

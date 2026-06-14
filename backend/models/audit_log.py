@@ -3,7 +3,7 @@ from models.db import db
 
 class AuditLog(db.Model):
     """
-    Powers undo + archive/restore. Every mutating action writes a row here
+    Powers archive/restore traceability. Every mutating action writes a row here
     with a full before-state snapshot.
     """
     __tablename__ = "audit_log"

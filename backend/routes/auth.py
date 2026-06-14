@@ -95,3 +95,45 @@ def get_current_user():
         "sells_retail": user.sells_retail,
         "onboarding_completed": user.onboarding_completed,
     }), 200
+
+
+@auth_bp.route("/me", methods=["PUT"])
+@jwt_required()
+def update_current_user():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    data = request.get_json() or {}
+
+    if "business_name" in data:
+        if not data["business_name"]:
+            return jsonify({"error": "Business name is required"}), 400
+        user.business_name = data["business_name"]
+
+    for field in ["business_address", "tin", "vat_status"]:
+        if field in data:
+            setattr(user, field, data[field] or None)
+
+    if "vat_status" in data and data["vat_status"] not in ("vat", "non_vat"):
+        return jsonify({"error": "vat_status must be 'vat' or 'non_vat'"}), 400
+
+    if "sells_meat" in data or "sells_retail" in data:
+        sells_meat = data.get("sells_meat", user.sells_meat)
+        sells_retail = data.get("sells_retail", user.sells_retail)
+        if not sells_meat and not sells_retail:
+            return jsonify({"error": "At least one product type must be selected"}), 400
+        user.sells_meat = sells_meat
+        user.sells_retail = sells_retail
+
+    db.session.commit()
+
+    return jsonify({
+        "id": user.id,
+        "email": user.email,
+        "business_name": user.business_name,
+        "business_address": user.business_address,
+        "tin": user.tin,
+        "vat_status": user.vat_status,
+        "sells_meat": user.sells_meat,
+        "sells_retail": user.sells_retail,
+        "onboarding_completed": user.onboarding_completed,
+    }), 200

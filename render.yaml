@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: upscale-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && flask --app app:create_app db stamp head
+    startCommand: flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 "app:create_app()"
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false

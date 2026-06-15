@@ -21,3 +21,8 @@ class AuditLog(db.Model):
     reverted = db.Column(db.Boolean, default=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    actor = db.Column(db.String(150))
+    terminal_id = db.Column(db.String(100))
+    ip_address = db.Column(db.String(64))
+    event_hash = db.Column(db.String(64), unique=True)
+    previous_hash = db.Column(db.String(64))

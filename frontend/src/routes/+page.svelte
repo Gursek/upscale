@@ -13,11 +13,7 @@
         try {
             const user = await apiJson<any>("/auth/me");
             auth.login(user, token);
-            if (!user.onboarding_completed) {
-                goto("/login?onboarding=true");
-            } else {
-                goto("/pos");
-            }
+            goto("/dashboard");
         } catch {
             goto("/login");
         }

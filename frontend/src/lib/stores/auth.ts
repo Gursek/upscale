@@ -8,7 +8,9 @@ interface User {
     tin?: string | null;
     vat_status: string;
     sells_meat: boolean;
+    sells_fish: boolean;
     sells_retail: boolean;
+    sells_veggies: boolean;
     onboarding_completed: boolean;
 }
 

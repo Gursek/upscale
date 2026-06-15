@@ -7,9 +7,10 @@
     import { Label } from "$lib/components/ui/label";
     import * as Dialog from "$lib/components/ui/dialog";
     import * as AlertDialog from "$lib/components/ui/alert-dialog";
+    import AppQuickNav from "$lib/components/AppQuickNav.svelte";
     import {
         Plus, Pencil, Archive, RotateCcw, Trash2,
-        Loader2, ArrowLeft, Users, Search, Phone, Package
+        Loader2, Users, Search, Phone, Package
     } from "lucide-svelte";
 
     interface Supplier {
@@ -164,14 +165,12 @@
 <div class="min-h-screen bg-muted/30">
 
     <header class="bg-background border-b px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
-        <Button variant="ghost" size="icon" aria-label="Back to POS" onclick={() => goto("/pos")}>
-            <ArrowLeft class="size-4" />
-        </Button>
         <Users class="size-5 text-primary" />
         <h1 class="font-semibold text-sm flex-1">Suppliers</h1>
         <Button size="sm" onclick={openCreateDialog} aria-label="Add new supplier">
             <Plus class="size-4 mr-1" /> Add Supplier
         </Button>
+        <AppQuickNav current="/suppliers" />
     </header>
 
     {#if error}

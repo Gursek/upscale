@@ -5,7 +5,8 @@ import json
 
 from models.db import db
 from models.supplier import Supplier
-from models.audit_log import AuditLog
+from services.compliance import add_audit_event
+from services.business_time import to_business_iso
 
 suppliers_bp = Blueprint("suppliers", __name__)
 
@@ -17,20 +18,20 @@ def _supplier_to_dict(s: Supplier) -> dict:
         "contact_info": s.contact_info,
         "products_supplied": s.products_supplied,
         "is_archived": s.is_archived,
-        "archived_at": s.archived_at.isoformat() if s.archived_at else None,
-        "created_at": s.created_at.isoformat(),
+        "archived_at": to_business_iso(s.archived_at),
+        "created_at": to_business_iso(s.created_at),
     }
 
 
 def _log_action(user_id, entity_id, action, before=None, after=None):
-    db.session.add(AuditLog(
+    add_audit_event(
         user_id=user_id,
         entity_type="supplier",
         entity_id=entity_id,
         action=action,
-        before_state=json.dumps(before) if before else None,
-        after_state=json.dumps(after) if after else None,
-    ))
+        before=before,
+        after=after,
+    )
 
 
 @suppliers_bp.route("/", methods=["GET"])

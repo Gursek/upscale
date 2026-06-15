@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { auth } from "$lib/stores/auth";
-    import { apiJson } from "$lib/api";
+    import { apiFetch, apiJson, API_BASE } from "$lib/api";
     import { goto } from "$app/navigation";
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
@@ -9,10 +9,11 @@
     import { Badge } from "$lib/components/ui/badge";
     import * as Dialog from "$lib/components/ui/dialog";
     import * as AlertDialog from "$lib/components/ui/alert-dialog";
+    import AppQuickNav from "$lib/components/AppQuickNav.svelte";
     import {
         Plus, Pencil, Archive, RotateCcw, Trash2,
-        Loader2, ArrowLeft, Package, AlertTriangle,
-        Search, PackagePlus, SlidersHorizontal, History
+        Loader2, Package, AlertTriangle,
+        Search, PackagePlus, SlidersHorizontal, History, ImagePlus
     } from "lucide-svelte";
 
     interface HistoryEntry {
@@ -54,6 +55,7 @@
     let restockNotes = $state("");
     let adjustQuantity = $state("");
     let adjustReason = $state("");
+    let uploadingImage = $state(false);
 
     // --- Form state ---
     let form = $state({
@@ -67,6 +69,7 @@
         stock_quantity: "",
         low_stock_threshold: "",
         tax_classification: "exempt",
+        image_url: "",
     });
 
     // --- Derived ---
@@ -203,10 +206,11 @@
     function openCreateDialog() {
         isEditing = false;
         form = {
-            name: "", category: "pork", cut_type: "",
+            name: "", category: defaultCategory(), cut_type: "",
             pricing_type: "per_kg", price: "", unit: "kg",
             sku: "", stock_quantity: "", low_stock_threshold: "",
             tax_classification: "exempt",
+            image_url: "",
         };
         productDialogOpen = true;
     }
@@ -225,6 +229,7 @@
             stock_quantity: String(product.stock_quantity),
             low_stock_threshold: String(product.low_stock_threshold),
             tax_classification: product.tax_classification,
+            image_url: product.image_url ?? "",
         };
         productDialogOpen = true;
     }
@@ -240,6 +245,38 @@
             form.pricing_type = "per_kg";
             form.unit = "kg";
             form.tax_classification = "exempt";
+        }
+    }
+
+    function defaultCategory() {
+        if (user?.sells_meat) return "pork";
+        if (user?.sells_fish) return "fish";
+        if (user?.sells_retail) return "retail";
+        return "veggies";
+    }
+
+    function productImageUrl(path: string | null) {
+        if (!path) return null;
+        return path.startsWith("http") ? path : `${API_BASE.replace("/api", "")}${path}`;
+    }
+
+    async function uploadImage(event: Event) {
+        const input = event.currentTarget as HTMLInputElement;
+        const file = input.files?.[0];
+        if (!file) return;
+        uploadingImage = true;
+        try {
+            const body = new FormData();
+            body.append("image", file);
+            const response = await apiFetch("/products/upload-image", { method: "POST", body });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Image upload failed");
+            form.image_url = data.image_url;
+        } catch (e: any) {
+            flash(e.message, true);
+        } finally {
+            uploadingImage = false;
+            input.value = "";
         }
     }
 
@@ -310,11 +347,11 @@
     }
 
     const categoryLabels: Record<string, string> = {
-        beef: "Beef", pork: "Pork", chicken: "Chicken", retail: "Retail"
+        beef: "Beef", pork: "Pork", chicken: "Chicken", fish: "Fish", retail: "Retail", veggies: "Veggies"
     };
 
     const categoryEmoji: Record<string, string> = {
-        beef: "🥩", pork: "🥓", chicken: "🍗", retail: "📦"
+        beef: "🥩", pork: "🥓", chicken: "🍗", fish: "🐟", retail: "📦", veggies: "🥕"
     };
 </script>
 
@@ -322,14 +359,12 @@
 
     <!-- Header -->
     <header class="bg-background border-b px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
-        <Button variant="ghost" size="icon" aria-label="Back to POS" onclick={() => goto("/pos")}>
-            <ArrowLeft class="size-4" />
-        </Button>
         <Package class="size-5 text-primary" />
         <h1 class="font-semibold text-sm flex-1">Inventory</h1>
         <Button size="sm" onclick={openCreateDialog} aria-label="Add new product">
             <Plus class="size-4 mr-1" /> Add Product
         </Button>
+        <AppQuickNav current="/inventory" />
     </header>
 
     <!-- Alerts -->
@@ -399,7 +434,13 @@
                         {#each filteredProducts as product (product.id)}
                             <div role="listitem"
                                 class="bg-background rounded-xl border p-4 flex items-center gap-4">
-                                <div class="text-2xl">{categoryEmoji[product.category] ?? "📦"}</div>
+                                <div class="size-12 rounded-lg bg-muted overflow-hidden flex items-center justify-center text-2xl shrink-0">
+                                    {#if productImageUrl(product.image_url)}
+                                        <img src={productImageUrl(product.image_url)} alt="" class="size-full object-cover" />
+                                    {:else}
+                                        {categoryEmoji[product.category] ?? "📦"}
+                                    {/if}
+                                </div>
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2 flex-wrap">
                                         <p class="font-medium text-sm">{product.name}</p>
@@ -531,7 +572,7 @@
                                         {/if}
                                     </div>
                                     <p class="text-xs text-muted-foreground shrink-0">
-                                        {new Date(entry.created_at).toLocaleString()}
+                                        {new Date(entry.created_at).toLocaleString("en-PH", { timeZone: "Asia/Manila" })}
                                     </p>
                                 </div>
                             </li>
@@ -566,8 +607,14 @@
                         <option value="pork">🥓 Pork</option>
                         <option value="chicken">🍗 Chicken</option>
                     {/if}
+                    {#if user?.sells_fish}
+                        <option value="fish">🐟 Fish</option>
+                    {/if}
                     {#if user?.sells_retail}
                         <option value="retail">📦 Retail</option>
+                    {/if}
+                    {#if user?.sells_veggies}
+                        <option value="veggies">🥕 Veggies</option>
                     {/if}
                 </select>
             </div>
@@ -575,6 +622,24 @@
             <div class="space-y-2">
                 <Label for="prod-name">Product Name</Label>
                 <Input id="prod-name" placeholder="e.g. Pork Belly" bind:value={form.name} />
+            </div>
+
+            <div class="space-y-2">
+                <Label for="product-image">Product Image <span class="text-muted-foreground">(optional)</span></Label>
+                <div class="flex items-center gap-3">
+                    <div class="size-16 rounded-lg border bg-muted overflow-hidden flex items-center justify-center">
+                        {#if productImageUrl(form.image_url)}
+                            <img src={productImageUrl(form.image_url)} alt="Product preview" class="size-full object-cover" />
+                        {:else}
+                            <ImagePlus class="size-5 text-muted-foreground" />
+                        {/if}
+                    </div>
+                    <div class="flex-1">
+                        <Input id="product-image" type="file" accept="image/png,image/jpeg,image/webp" onchange={uploadImage} disabled={uploadingImage} />
+                        <p class="text-xs text-muted-foreground mt-1">PNG, JPG, or WEBP up to 5 MB.</p>
+                    </div>
+                    {#if uploadingImage}<Loader2 class="size-4 animate-spin" />{/if}
+                </div>
             </div>
 
             {#if form.category !== "retail"}

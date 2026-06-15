@@ -9,6 +9,7 @@ export interface CartItem {
     unit_cost: number;
     quantity: number;
     line_total: number;
+    stock_quantity: number;
 }
 
 function createCartStore() {
@@ -16,14 +17,26 @@ function createCartStore() {
 
     return {
         subscribe,
-        addItem(product: any, quantity: number) {
+        addItem(product: any, quantity: number): { added: boolean; quantity: number; available: number } {
+            let result = { added: false, quantity: 0, available: Number(product.stock_quantity) };
             update((items) => {
                 const existing = items.find((i) => i.product_id === product.id);
+                const available = Number(product.stock_quantity);
+                const requested = product.pricing_type === "fixed" && existing
+                    ? existing.quantity + quantity
+                    : quantity;
+                if (requested > available) {
+                    result = { added: false, quantity: existing?.quantity ?? 0, available };
+                    return items;
+                }
                 if (existing) {
-                    existing.quantity = quantity;
-                    existing.line_total = Number((existing.unit_cost * quantity).toFixed(2));
+                    existing.quantity = requested;
+                    existing.stock_quantity = available;
+                    existing.line_total = Number((existing.unit_cost * existing.quantity).toFixed(2));
+                    result = { added: true, quantity: existing.quantity, available };
                     return [...items];
                 }
+                result = { added: true, quantity, available };
                 return [
                     ...items,
                     {
@@ -35,9 +48,43 @@ function createCartStore() {
                         unit_cost: product.price,
                         quantity,
                         line_total: Number((product.price * quantity).toFixed(2)),
+                        stock_quantity: available,
                     },
                 ];
             });
+            return result;
+        },
+        setQuantity(product_id: number, quantity: number): boolean {
+            let changed = false;
+            update((items) => items.map((item) => {
+                if (item.product_id !== product_id) return item;
+                if (quantity <= 0) {
+                    changed = true;
+                    return { ...item, quantity: 0 };
+                }
+                if (quantity > item.stock_quantity) return item;
+                changed = true;
+                return {
+                    ...item,
+                    quantity,
+                    line_total: Number((item.unit_cost * quantity).toFixed(2)),
+                };
+            }).filter((item) => item.quantity > 0));
+            return changed;
+        },
+        syncStock(products: any[]) {
+            update((items) => items.map((item) => {
+                const product = products.find((candidate) => candidate.id === item.product_id);
+                if (!product) return item;
+                const stock = Number(product.stock_quantity);
+                const quantity = Math.min(item.quantity, stock);
+                return {
+                    ...item,
+                    stock_quantity: stock,
+                    quantity,
+                    line_total: Number((item.unit_cost * quantity).toFixed(2)),
+                };
+            }).filter((item) => item.quantity > 0));
         },
         removeItem(product_id: number) {
             update((items) => items.filter((i) => i.product_id !== product_id));

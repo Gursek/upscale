@@ -22,11 +22,7 @@
                 body: JSON.stringify({ email, password }),
             });
             auth.login(res.user, res.access_token);
-            if (!res.user.onboarding_completed) {
-                goto("/?onboarding=true");
-            } else {
-                goto("/pos");
-            }
+            goto("/dashboard");
         } catch (e: any) {
             error = e.message;
         } finally {

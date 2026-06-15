@@ -6,7 +6,7 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import * as Card from "$lib/components/ui/card";
-    import { ShoppingBasket, Loader2 } from "lucide-svelte";
+    import { ShoppingBasket, Loader2, Check, X } from "lucide-svelte";
 
     let email = $state("");
     let password = $state("");
@@ -17,6 +17,17 @@
     let vatStatus = $state("non_vat");
     let error = $state("");
     let loading = $state(false);
+    let passwordRequirements = $derived([
+        { label: "At least 8 characters", met: password.length >= 8 },
+        { label: "One uppercase letter", met: /[A-Z]/.test(password) },
+        { label: "One number", met: /\d/.test(password) },
+        { label: "One special character", met: /[^A-Za-z0-9]/.test(password) },
+    ]);
+    let metRequirementCount = $derived(passwordRequirements.filter((requirement) => requirement.met).length);
+    let passwordStrength = $derived(
+        metRequirementCount <= 2 ? "Weak" : metRequirementCount === 3 ? "Fair" : "Strong"
+    );
+    let passwordIsStrong = $derived(metRequirementCount === 4);
 
     async function handleRegister() {
         error = "";
@@ -24,8 +35,8 @@
             error = "Passwords do not match";
             return;
         }
-        if (password.length < 8) {
-            error = "Password must be at least 8 characters";
+        if (!passwordIsStrong) {
+            error = "Password does not meet all security requirements";
             return;
         }
         loading = true;
@@ -42,7 +53,7 @@
                 }),
             });
             auth.login(res.user, res.access_token);
-            goto("/onboarding");
+            goto("/dashboard");
         } catch (e: any) {
             error = e.message;
         } finally {
@@ -106,7 +117,41 @@
 
                 <div class="space-y-2">
                     <Label for="password">Password</Label>
-                    <Input id="password" type="password" placeholder="Min. 8 characters" bind:value={password} />
+                    <Input
+                        id="password"
+                        type="password"
+                        placeholder="Create a strong password"
+                        bind:value={password}
+                        autocomplete="new-password"
+                        aria-describedby="password-strength password-requirements"
+                    />
+                    {#if password}
+                        <div id="password-strength" class="space-y-1" aria-live="polite">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-muted-foreground">Password strength</span>
+                                <span class={passwordStrength === "Strong" ? "text-green-700" : passwordStrength === "Fair" ? "text-amber-700" : "text-destructive"}>
+                                    {passwordStrength}
+                                </span>
+                            </div>
+                            <div class="grid grid-cols-4 gap-1" aria-hidden="true">
+                                {#each [1, 2, 3, 4] as segment}
+                                    <div class="h-1.5 rounded-full {segment <= metRequirementCount ? (passwordStrength === 'Strong' ? 'bg-green-600' : passwordStrength === 'Fair' ? 'bg-amber-500' : 'bg-destructive') : 'bg-muted'}"></div>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+                    <ul id="password-requirements" class="grid grid-cols-2 gap-1 text-xs">
+                        {#each passwordRequirements as requirement}
+                            <li class="flex items-center gap-1 {requirement.met ? 'text-green-700' : 'text-muted-foreground'}">
+                                {#if requirement.met}
+                                    <Check class="size-3" />
+                                {:else}
+                                    <X class="size-3" />
+                                {/if}
+                                {requirement.label}
+                            </li>
+                        {/each}
+                    </ul>
                 </div>
 
                 <div class="space-y-2">
@@ -117,7 +162,7 @@
                 <Button
                     class="w-full"
                     onclick={handleRegister}
-                    disabled={loading || !email || !password || !businessName}
+                    disabled={loading || !email || !passwordIsStrong || password !== confirmPassword || !businessName}
                     aria-busy={loading}
                 >
                     {#if loading}

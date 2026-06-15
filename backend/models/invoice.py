@@ -10,6 +10,18 @@ class Invoice(db.Model):
     invoice_number = db.Column(db.String(6), nullable=False)
     invoice_type = db.Column(db.String(10), default="cash")  # 'cash' or 'charge'
     date_time = db.Column(db.DateTime, default=datetime.utcnow)
+    cashier_name = db.Column(db.String(150))
+    payment_mode = db.Column(db.String(20), default="cash")
+    cash_tendered = db.Column(db.Numeric(12, 2), default=0)
+    change_amount = db.Column(db.Numeric(12, 2), default=0)
+
+    buyer_name = db.Column(db.String(150))
+    buyer_address = db.Column(db.String(255))
+    buyer_tin = db.Column(db.String(20))
+    buyer_business_style = db.Column(db.String(150))
+
+    # Preserve the registered seller/machine identity exactly as it was at sale time.
+    seller_snapshot_json = db.Column(db.Text, nullable=False, default="{}")
 
     # Full sales breakdown — populated based on user's vat_status at time of sale
     vatable_sales = db.Column(db.Numeric(10, 2), default=0)      # VAT-registered: 12% VAT applies
@@ -25,15 +37,24 @@ class Invoice(db.Model):
 
     discount_type = db.Column(db.String(20))
     discount_id_no = db.Column(db.String(50))
+    discount_beneficiary_name = db.Column(db.String(150))
+    discount_beneficiary_tin = db.Column(db.String(20))
     discount_amount = db.Column(db.Numeric(10, 2), default=0)
 
     status = db.Column(db.String(10), default="active")
     voided_at = db.Column(db.DateTime)
     voided_reason = db.Column(db.Text)
+    voided_by = db.Column(db.String(150))
 
     synced = db.Column(db.Boolean, default=False)
+    reprint_count = db.Column(db.Integer, default=0)
+    last_reprinted_at = db.Column(db.DateTime)
 
     items = db.relationship("InvoiceItem", backref="invoice", lazy=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "invoice_number", name="uq_invoice_user_number"),
+    )
 
 
 class InvoiceItem(db.Model):

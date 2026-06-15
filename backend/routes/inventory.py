@@ -6,8 +6,10 @@ import json
 
 from models.db import db
 from models.product import Product
-from models.audit_log import AuditLog
+from models.user import User
+from services.compliance import add_audit_event
 from models.ejournal import EJournalEntry
+from services.business_time import business_today, to_business_iso
 
 inventory_bp = Blueprint("inventory", __name__)
 
@@ -26,20 +28,20 @@ def _stock_snapshot(product: Product, **extra) -> dict:
 
 
 def _log_inventory_action(user_id, product_id, action, before, after):
-    db.session.add(AuditLog(
+    add_audit_event(
         user_id=user_id,
         entity_type="product",
         entity_id=product_id,
         action=action,
-        before_state=json.dumps(before),
-        after_state=json.dumps(after),
-    ))
+        before=before,
+        after=after,
+    )
 
 
 def _log_ejournal(user_id, product_id, snapshot):
     db.session.add(EJournalEntry(
         user_id=user_id,
-        entry_date=date.today(),
+        entry_date=business_today(User.query.get(user_id).business_day_cutoff),
         entry_type="adjustment",
         reference_id=product_id,
         snapshot_json=json.dumps(snapshot),
@@ -192,7 +194,7 @@ def inventory_history():
             "reason": after.get("reason"),
             "notes": after.get("notes"),
             "reverted": entry.reverted,
-            "created_at": entry.created_at.isoformat(),
+            "created_at": to_business_iso(entry.created_at),
         })
 
     return jsonify(history), 200

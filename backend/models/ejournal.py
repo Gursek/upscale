@@ -40,6 +40,8 @@ class XReading(db.Model):
 
     starting_invoice_no = db.Column(db.String(6))
     ending_invoice_no = db.Column(db.String(6))
+    cash_sales = db.Column(db.Numeric(14, 2), default=0)
+    reset_counter = db.Column(db.Integer, default=0)
 
 
 class ZReading(db.Model):
@@ -65,3 +67,5 @@ class ZReading(db.Model):
 
     starting_invoice_no = db.Column(db.String(6))
     ending_invoice_no = db.Column(db.String(6))
+    cash_sales = db.Column(db.Numeric(14, 2), default=0)
+    reset_counter = db.Column(db.Integer, default=0)

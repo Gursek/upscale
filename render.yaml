@@ -2,9 +2,8 @@ services:
   - type: web
     name: upscale-api
     runtime: python
-    rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 "app:create_app()"
+    startCommand: cd backend && flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 "app:create_app()"
     healthCheckPath: /api/health
     envVars:
       - key: FLASK_ENV

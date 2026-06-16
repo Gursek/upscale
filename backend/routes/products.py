@@ -5,6 +5,7 @@ import json
 import os
 from uuid import uuid4
 from werkzeug.utils import secure_filename
+from supabase import create_client
 
 from models.db import db
 from models.product import Product
@@ -13,6 +14,15 @@ from services.business_time import to_business_iso
 
 products_bp = Blueprint("products", __name__)
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+
+
+def _supabase_storage_client():
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    bucket = os.getenv("SUPABASE_STORAGE_BUCKET", "product-images")
+    if not url or not key:
+        return None, bucket
+    return create_client(url, key), bucket
 
 
 def _product_to_dict(p: Product) -> dict:
@@ -69,13 +79,31 @@ def upload_product_image():
     if size > 5 * 1024 * 1024:
         return jsonify({"error": "Image must be 5 MB or smaller"}), 400
 
-    relative_dir = os.path.join("uploads", "products", str(user_id))
-    upload_dir = os.path.join(current_app.static_folder, relative_dir)
-    os.makedirs(upload_dir, exist_ok=True)
     stored_name = f"{uuid4().hex}.{extension}"
-    image.save(os.path.join(upload_dir, stored_name))
+    storage_path = f"products/{user_id}/{stored_name}"
 
-    image_url = f"/static/{relative_dir.replace(os.sep, '/')}/{stored_name}"
+    supabase, bucket = _supabase_storage_client()
+    if supabase:
+        payload = image.read()
+        try:
+            supabase.storage.from_(bucket).upload(
+                storage_path,
+                payload,
+                {"content-type": image.mimetype or f"image/{extension}", "upsert": "false"},
+            )
+            image_url = supabase.storage.from_(bucket).get_public_url(storage_path)
+        except Exception as exc:
+            return jsonify({
+                "error": "Image upload failed. Check Supabase Storage bucket and service role settings.",
+                "details": str(exc),
+            }), 500
+    else:
+        relative_dir = os.path.join("uploads", "products", str(user_id))
+        upload_dir = os.path.join(current_app.static_folder, relative_dir)
+        os.makedirs(upload_dir, exist_ok=True)
+        image.seek(0)
+        image.save(os.path.join(upload_dir, stored_name))
+        image_url = f"/static/{relative_dir.replace(os.sep, '/')}/{stored_name}"
     return jsonify({"image_url": image_url}), 201
 
 

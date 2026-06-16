@@ -71,18 +71,23 @@ def create_app(test_config=None):
     def health():
         return {"status": "ok"}
 
-    with app.app_context():
-        db.create_all()
-        if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
-            user_columns = {
-                row[1] for row in db.session.execute(text("PRAGMA table_info(users)")).fetchall()
-            }
-            for column in ("sells_fish", "sells_veggies"):
-                if column not in user_columns:
-                    db.session.execute(text(
-                        f"ALTER TABLE users ADD COLUMN {column} BOOLEAN DEFAULT 0"
-                    ))
-            db.session.commit()
+    auto_create_db = (
+        os.getenv("AUTO_CREATE_DB", "true").lower() == "true"
+        and os.getenv("FLASK_ENV") != "production"
+    )
+    if auto_create_db:
+        with app.app_context():
+            db.create_all()
+            if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
+                user_columns = {
+                    row[1] for row in db.session.execute(text("PRAGMA table_info(users)")).fetchall()
+                }
+                for column in ("sells_fish", "sells_veggies"):
+                    if column not in user_columns:
+                        db.session.execute(text(
+                            f"ALTER TABLE users ADD COLUMN {column} BOOLEAN DEFAULT 0"
+                        ))
+                db.session.commit()
 
     return app
 

@@ -16,14 +16,14 @@
     ];
 </script>
 
-<nav class="flex items-center gap-0.5" aria-label="Quick access">
+<nav class="flex max-w-[68vw] items-center gap-1 overflow-x-auto py-1" aria-label="Quick access">
     {#each links as link}
         {@const Icon = link.icon}
         <Button
             variant="ghost"
             size="icon"
-            class="size-8 hover:!bg-primary hover:!text-primary-foreground active:translate-y-0
-                {current === link.path ? '!bg-primary !text-primary-foreground shadow-sm' : ''}"
+            class="size-10 shrink-0 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0 sm:size-9
+                {current === link.path ? 'bg-primary! text-primary-foreground! shadow-sm' : ''}"
             aria-label={link.label}
             aria-current={current === link.path ? "page" : undefined}
             onclick={() => goto(link.path)}

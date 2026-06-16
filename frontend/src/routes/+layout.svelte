@@ -40,4 +40,12 @@
 
 {#if ready}
 	{@render children()}
+{:else}
+	<div class="min-h-screen bg-muted/30 flex items-center justify-center px-4">
+		<div class="rounded-2xl border bg-background p-6 text-center shadow-sm">
+			<div class="mx-auto mb-3 size-8 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+			<p class="text-sm font-medium">Loading UpScale POS</p>
+			<p class="mt-1 text-xs text-muted-foreground">Checking your secure session...</p>
+		</div>
+	</div>
 {/if}

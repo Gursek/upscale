@@ -17,6 +17,8 @@
     let dashboard = $state<any>(null);
     let onboardingOpen = $state(false);
     let onboardingLoading = $state(false);
+    let tutorialOpen = $state(false);
+    let tutorialStep = $state(0);
     let sellsMeat = $state(false);
     let sellsFish = $state(false);
     let sellsRetail = $state(false);
@@ -27,6 +29,28 @@
     let maxDailySales = $derived(
         Math.max(1, ...(dashboard?.sales_series ?? []).map((point: any) => point.total))
     );
+    const tutorialSteps = [
+        {
+            title: "Start from the dashboard",
+            body: "Your sales, recent transactions, low-stock alerts, and quick actions live here. Use it as your store's command center.",
+        },
+        {
+            title: "Use POS for fast selling",
+            body: "Tap fixed-price products to add one instantly. Select per-kg items, read the weighing scale, then charge cash with a receipt preview.",
+        },
+        {
+            title: "Keep inventory connected",
+            body: "Stock is protected during checkout. Products cannot be sold beyond available quantity, and sales deduct stock automatically.",
+        },
+        {
+            title: "Review invoices and BIR reports",
+            body: "Invoices, voids, X-readings, Z-readings, and exports are available from Invoices and Reports for daily operations and compliance.",
+        },
+        {
+            title: "Finish your business setup",
+            body: "Open Settings to complete BIR registration details, product categories, VAT status, and security options before real store use.",
+        },
+    ];
 
     onMount(() => {
         online = navigator.onLine;
@@ -56,6 +80,7 @@
             sellsRetail = currentUser.sells_retail ?? false;
             sellsVeggies = currentUser.sells_veggies ?? false;
             onboardingOpen = !currentUser.onboarding_completed;
+            tutorialOpen = currentUser.onboarding_completed && localStorage.getItem("upscale_dashboard_tutorial_seen") !== "true";
             dashboard = await apiJson<any>(`/dashboard/?range=${chartRange}`);
         } catch (e: any) {
             error = e.message || "Failed to load dashboard";
@@ -109,6 +134,8 @@
                 onboarding_completed: true,
             } : current);
             onboardingOpen = false;
+            tutorialStep = 0;
+            tutorialOpen = true;
         } catch (e: any) {
             error = e.message;
         } finally {
@@ -119,6 +146,11 @@
     function logout() {
         auth.logout();
         goto("/login");
+    }
+
+    function closeTutorial() {
+        tutorialOpen = false;
+        localStorage.setItem("upscale_dashboard_tutorial_seen", "true");
     }
 
     function formatCurrency(value: number) {
@@ -135,18 +167,18 @@
             <LayoutDashboard class="size-5 text-primary" />
             <div class="flex-1">
                 <h1 class="font-semibold text-sm">{user?.business_name ?? "UpScale POS"}</h1>
-                <p class="text-xs text-muted-foreground">Business dashboard</p>
+                <p class="text-xs text-muted-foreground">Scale-ready sales, inventory, and reports</p>
             </div>
             <div class="flex items-center gap-1 text-xs {online ? 'text-green-700' : 'text-destructive'}" role="status">
                 {#if online}<Wifi class="size-3.5" /> Online{:else}<CloudOff class="size-3.5" /> Offline{/if}
             </div>
-            <Button variant="ghost" size="icon" class="hover:!bg-primary hover:!text-primary-foreground" aria-label="Refresh dashboard" onclick={loadDashboard}>
+            <Button variant="ghost" size="icon" class="hover:bg-primary hover:text-primary-foreground" aria-label="Refresh dashboard" onclick={loadDashboard}>
                 <RefreshCw class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="hover:!bg-primary hover:!text-primary-foreground" aria-label="Settings" onclick={() => goto("/settings")}>
+            <Button variant="ghost" size="icon" class="hover:bg-primary hover:text-primary-foreground" aria-label="Settings" onclick={() => goto("/settings")}>
                 <Settings class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="hover:!bg-primary hover:!text-primary-foreground" aria-label="Log out" onclick={logout}>
+            <Button variant="ghost" size="icon" class="hover:bg-primary hover:text-primary-foreground" aria-label="Log out" onclick={logout}>
                 <LogOut class="size-4" />
             </Button>
         </div>
@@ -180,17 +212,17 @@
                 </div>
                 <div class="bg-background rounded-xl border p-4">
                     <CloudOff class="size-5 text-primary mb-3" />
-                    <p class="text-xs text-muted-foreground">Unsynced invoices</p>
-                    <p class="text-xl font-semibold mt-1">{dashboard.pending_sync_count}</p>
+                    <p class="text-xs text-muted-foreground">Database mode</p>
+                    <p class="text-xl font-semibold mt-1">Online</p>
                 </div>
             </section>
 
             <nav class="grid grid-cols-2 md:grid-cols-5 gap-3" aria-label="Quick access">
-                <Button variant="outline" class="h-16 gap-2 hover:!bg-primary hover:!text-primary-foreground active:translate-y-0" onclick={() => goto("/pos")}><ShoppingCart class="size-5" /> Open POS</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:!bg-primary hover:!text-primary-foreground active:translate-y-0" onclick={() => goto("/inventory")}><Package class="size-5" /> Inventory</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:!bg-primary hover:!text-primary-foreground active:translate-y-0" onclick={() => goto("/invoices")}><ReceiptText class="size-5" /> Invoices</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:!bg-primary hover:!text-primary-foreground active:translate-y-0" onclick={() => goto("/suppliers")}><Truck class="size-5" /> Suppliers</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:!bg-primary hover:!text-primary-foreground active:translate-y-0" onclick={() => goto("/reports")}><FileBarChart class="size-5" /> Reports</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/pos")}><ShoppingCart class="size-5" /> Open POS</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/inventory")}><Package class="size-5" /> Inventory</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/invoices")}><ReceiptText class="size-5" /> Invoices</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/suppliers")}><Truck class="size-5" /> Suppliers</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/reports")}><FileBarChart class="size-5" /> Reports</Button>
             </nav>
 
             <div class="grid lg:grid-cols-2 gap-4">
@@ -325,6 +357,39 @@
                 {#if onboardingLoading}<Loader2 class="size-4 animate-spin mr-2" />{/if}
                 Continue to dashboard
             </Button>
+        </Dialog.Footer>
+    </Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={tutorialOpen}>
+    <Dialog.Content class="max-w-lg" showCloseButton={false}>
+        <Dialog.Header>
+            <Dialog.Title>{tutorialSteps[tutorialStep].title}</Dialog.Title>
+            <Dialog.Description>{tutorialSteps[tutorialStep].body}</Dialog.Description>
+        </Dialog.Header>
+
+        <div class="rounded-2xl border bg-primary/5 p-4">
+            <div class="mb-3 flex items-center justify-between text-xs text-muted-foreground">
+                <span>Step {tutorialStep + 1} of {tutorialSteps.length}</span>
+                <span>UpScale quick tour</span>
+            </div>
+            <div class="grid grid-cols-5 gap-1" aria-hidden="true">
+                {#each tutorialSteps as _, index}
+                    <div class="h-1.5 rounded-full {index <= tutorialStep ? 'bg-primary' : 'bg-muted'}"></div>
+                {/each}
+            </div>
+        </div>
+
+        <Dialog.Footer>
+            <Button variant="outline" onclick={closeTutorial}>Skip tour</Button>
+            {#if tutorialStep > 0}
+                <Button variant="outline" onclick={() => tutorialStep -= 1}>Back</Button>
+            {/if}
+            {#if tutorialStep < tutorialSteps.length - 1}
+                <Button onclick={() => tutorialStep += 1}>Next</Button>
+            {:else}
+                <Button onclick={closeTutorial}>Start using UpScale</Button>
+            {/if}
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>

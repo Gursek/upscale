@@ -26,6 +26,12 @@ DATABASE_URL=postgresql://...
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_STORAGE_BUCKET=product-images
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USE_TLS=true
+SMTP_USERNAME=notifications@example.com
+SMTP_PASSWORD=...
+SMTP_FROM=notifications@example.com
 ```
 
 Do not put the service role key in Vercel or frontend code.

@@ -43,6 +43,9 @@ class User(db.Model):
     # Sequential invoice numbering per BIR requirements
     last_invoice_number = db.Column(db.Integer, default=0)
 
+    password_reset_otp_hash = db.Column(db.String(255))
+    password_reset_expires_at = db.Column(db.DateTime)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def next_invoice_number(self):

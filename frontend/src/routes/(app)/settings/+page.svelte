@@ -264,16 +264,15 @@
                             </div>
 
                             <div class="space-y-2">
-                                <Label for="vat-status">VAT Status</Label>
-                                <select
-                                    id="vat-status"
-                                    bind:value={vatStatus}
-                                    class="w-full h-8 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                    aria-label="VAT status"
-                                >
-                                    <option value="non_vat">Non-VAT Registered</option>
-                                    <option value="vat">VAT Registered (12%)</option>
-                                </select>
+                                <Label>VAT Status</Label>
+                                <div class="grid grid-cols-2 gap-2" aria-label="VAT status">
+                                    <Button type="button" variant={vatStatus === "non_vat" ? "default" : "outline"} onclick={() => vatStatus = "non_vat"}>
+                                        Non-VAT
+                                    </Button>
+                                    <Button type="button" variant={vatStatus === "vat" ? "default" : "outline"} onclick={() => vatStatus = "vat"}>
+                                        VAT 12%
+                                    </Button>
+                                </div>
                             </div>
                         </div>
                         <div class="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
@@ -425,9 +424,14 @@
                             onclick={() => sellsFish = !sellsFish}
                             aria-pressed={sellsFish}
                             aria-label="Toggle fish products"
-                            class="relative min-h-24 rounded-xl border-2 p-4 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring {sellsFish ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}"
+                            class="relative min-h-24 rounded-xl border-2 p-4 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                                {sellsFish ? 'border-primary bg-primary/5' : 'border-border bg-background hover:border-primary/40'}"
                         >
-                            {#if sellsFish}<Check class="absolute top-2 right-2 size-3 text-primary" />{/if}
+                            {#if sellsFish}
+                                <div class="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-0.5">
+                                    <Check class="size-3" />
+                                </div>
+                            {/if}
                             <Fish class="size-6 mb-2 {sellsFish ? 'text-primary' : 'text-muted-foreground'}" />
                             <p class="font-medium text-xs">Fish</p>
                         </button>
@@ -455,9 +459,14 @@
                             onclick={() => sellsVeggies = !sellsVeggies}
                             aria-pressed={sellsVeggies}
                             aria-label="Toggle vegetable products"
-                            class="relative min-h-24 rounded-xl border-2 p-4 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring {sellsVeggies ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}"
+                            class="relative min-h-24 rounded-xl border-2 p-4 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                                {sellsVeggies ? 'border-primary bg-primary/5' : 'border-border bg-background hover:border-primary/40'}"
                         >
-                            {#if sellsVeggies}<Check class="absolute top-2 right-2 size-3 text-primary" />{/if}
+                            {#if sellsVeggies}
+                                <div class="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-0.5">
+                                    <Check class="size-3" />
+                                </div>
+                            {/if}
                             <Carrot class="size-6 mb-2 {sellsVeggies ? 'text-primary' : 'text-muted-foreground'}" />
                             <p class="font-medium text-xs">Veggies</p>
                         </button>

@@ -13,7 +13,7 @@
     import * as Sheet from "$lib/components/ui/sheet";
     import * as Dialog from "$lib/components/ui/dialog";
     import {
-        ShoppingBasket, ShoppingCart, Trash2, Loader2,
+        ShoppingBasket, ShoppingCart, Trash2, Loader2, Search,
         Scale, FileBarChart, LayoutDashboard, LayoutGrid, Package, ReceiptText,
         Users, LogOut, Settings, Plus, Minus,
         ScanLine, X
@@ -22,6 +22,7 @@
     // --- State ---
     let products = $state<any[]>([]);
     let activeCategory = $state("all");
+    let searchTerm = $state("");
     let selectedProduct = $state<any>(null);
     let weightInput = $state("");
     let loadingProducts = $state(true);
@@ -31,6 +32,10 @@
     let successMessage = $state("");
     let cartOpen = $state(false);
     let checkoutDialogOpen = $state(false);
+    let receiptDialogOpen = $state(false);
+    let showBuyerFields = $state(false);
+    let showDiscountFields = $state(false);
+    let lastInvoice = $state<any>(null);
     let cashTendered = $state("");
     let buyerName = $state("");
     let buyerTin = $state("");
@@ -55,15 +60,27 @@
         return cats;
     });
 
-    let filteredProducts = $derived(
-        activeCategory === "all"
-            ? products
-            : products.filter((p) => p.category === activeCategory)
-    );
+    let filteredProducts = $derived.by(() => {
+        const query = searchTerm.trim().toLowerCase();
+        return products.filter((product) => {
+            const categoryMatches = activeCategory === "all" || product.category === activeCategory;
+            const searchMatches = !query ||
+                product.name?.toLowerCase().includes(query) ||
+                product.cut_type?.toLowerCase().includes(query) ||
+                product.sku?.toLowerCase().includes(query);
+            return categoryMatches && searchMatches;
+        });
+    });
 
     let cartItems = $derived($cart);
     let total = $derived($cartTotal);
     let payableTotal = $derived(Math.max(0, total - (Number(discountAmount) || 0)));
+    let changeAmount = $derived(Math.max(0, (Number(cashTendered) || 0) - payableTotal));
+    let quickCashAmounts = $derived.by(() => {
+        const due = Math.ceil(payableTotal);
+        const candidates = [due, 50, 100, 200, 500, 1000].filter((amount) => amount >= due);
+        return [...new Set(candidates)].slice(0, 4);
+    });
 
     let computedPrice = $derived(() => {
         if (!selectedProduct || !weightInput) return 0;
@@ -97,6 +114,10 @@
 
     function cartQuantity(productId: number) {
         return cartItems.find((item) => item.product_id === productId)?.quantity ?? 0;
+    }
+
+    function availableStock(product: any) {
+        return Math.max(0, Number(product.stock_quantity) - cartQuantity(product.id));
     }
 
     async function selectProduct(product: any) {
@@ -170,7 +191,23 @@
     function beginCheckout() {
         if (cartItems.length === 0) return;
         cashTendered = payableTotal.toFixed(2);
+        showBuyerFields = false;
+        showDiscountFields = false;
         checkoutDialogOpen = true;
+    }
+
+    function resetOptionalCheckoutFields() {
+        buyerName = "";
+        buyerTin = "";
+        buyerAddress = "";
+        buyerBusinessStyle = "";
+        discountType = "";
+        discountAmount = "0";
+        discountBeneficiaryName = "";
+        discountBeneficiaryTin = "";
+        discountIdNo = "";
+        showBuyerFields = false;
+        showDiscountFields = false;
     }
 
     async function checkout() {
@@ -204,18 +241,12 @@
                     discount_id_no: discountIdNo.trim() || null,
                 }),
             });
+            lastInvoice = invoice;
             cart.clear();
             cartOpen = false;
             checkoutDialogOpen = false;
-            buyerName = "";
-            buyerTin = "";
-            buyerAddress = "";
-            buyerBusinessStyle = "";
-            discountType = "";
-            discountAmount = "0";
-            discountBeneficiaryName = "";
-            discountBeneficiaryTin = "";
-            discountIdNo = "";
+            receiptDialogOpen = true;
+            resetOptionalCheckoutFields();
             await loadProducts(false);
             successMessage = `Invoice #${invoice.invoice_number} — ₱${Number(invoice.total_amount).toFixed(2)}`;
             setTimeout(() => successMessage = "", 5000);
@@ -224,6 +255,30 @@
         } finally {
             checkoutLoading = false;
         }
+    }
+
+    async function printLastReceipt() {
+        if (!lastInvoice) return;
+        try {
+            const response = await apiFetch(`/invoices/${lastInvoice.id}/print`);
+            const html = await response.text();
+            if (!response.ok) throw new Error("Could not load receipt");
+            const printWindow = window.open("", "_blank", "width=420,height=720");
+            if (!printWindow) throw new Error("Popup was blocked");
+            printWindow.document.open();
+            printWindow.document.write(html);
+            printWindow.document.close();
+            printWindow.focus();
+        } catch (e: any) {
+            error = e.message || "Could not print receipt";
+        }
+    }
+
+    function nextTransaction() {
+        receiptDialogOpen = false;
+        lastInvoice = null;
+        selectedProduct = null;
+        weightInput = "";
     }
 
     function logout() {
@@ -259,26 +314,26 @@
             <span class="font-semibold text-sm tracking-tight">{user?.business_name ?? "UpScale POS"}</span>
         </div>
         <nav class="flex items-center" aria-label="Main navigation">
-            <Button variant="ghost" size="icon" class="size-8 hover:!bg-primary hover:!text-primary-foreground" aria-label="Dashboard" onclick={() => goto("/dashboard")}>
+            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Dashboard" onclick={() => goto("/dashboard")}>
                 <LayoutDashboard class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:!bg-primary hover:!text-primary-foreground" aria-label="Inventory" onclick={() => goto("/inventory")}>
+            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Inventory" onclick={() => goto("/inventory")}>
                 <Package class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:!bg-primary hover:!text-primary-foreground" aria-label="Sales history" onclick={() => goto("/invoices")}>
+            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Sales history" onclick={() => goto("/invoices")}>
                 <ReceiptText class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:!bg-primary hover:!text-primary-foreground" aria-label="BIR reports" onclick={() => goto("/reports")}>
+            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="BIR reports" onclick={() => goto("/reports")}>
                 <FileBarChart class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:!bg-primary hover:!text-primary-foreground" aria-label="Suppliers" onclick={() => goto("/suppliers")}>
+            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Suppliers" onclick={() => goto("/suppliers")}>
                 <Users class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:!bg-primary hover:!text-primary-foreground" aria-label="Settings" onclick={() => goto("/settings")}>
+            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Settings" onclick={() => goto("/settings")}>
                 <Settings class="size-4" />
             </Button>
             <div class="w-px h-4 bg-border mx-1"></div>
-            <Button variant="ghost" size="icon" class="size-8 hover:!bg-primary hover:!text-primary-foreground" aria-label="Log out" onclick={logout}>
+            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Log out" onclick={logout}>
                 <LogOut class="size-4" />
             </Button>
         </nav>
@@ -310,7 +365,7 @@
                             role="tab"
                             aria-selected={activeCategory === cat}
                             onclick={() => activeCategory = cat}
-                            class="px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors
+                            class="px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
                                 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0
                                 {activeCategory === cat
                                     ? 'bg-primary text-primary-foreground'
@@ -322,8 +377,20 @@
                 </div>
             </div>
 
+            <div class="bg-card border-b border-border px-3 py-2 shrink-0">
+                <div class="relative max-w-md">
+                    <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Input
+                        class="h-10 pl-9"
+                        placeholder="Search products, cuts, or SKU"
+                        bind:value={searchTerm}
+                        aria-label="Search products"
+                    />
+                </div>
+            </div>
+
             <!-- Product grid -->
-            <div class="flex-1 overflow-y-auto p-3">
+            <div class="flex-1 overflow-y-auto p-3 pb-24 md:pb-3">
                 {#if loadingProducts}
                     <div class="flex items-center justify-center h-full">
                         <Loader2 class="size-5 animate-spin text-muted-foreground" />
@@ -337,8 +404,8 @@
                         </Button>
                     </div>
                 {:else}
-                    <ul class="grid gap-2"
-                        style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr))"
+                    <ul class="grid gap-2 sm:gap-3"
+                        style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr))"
                         aria-label="Products">
                         {#each filteredProducts as product (product.id)}
                             <li>
@@ -346,8 +413,8 @@
                                     onclick={() => selectProduct(product)}
                                     aria-label="{product.name}, ₱{product.price} per {product.unit}"
                                     aria-pressed={selectedProduct?.id === product.id}
-                                    disabled={Number(product.stock_quantity) <= 0 || (product.pricing_type === "fixed" && cartQuantity(product.id) >= Number(product.stock_quantity))}
-                                    class="w-full h-32.5 rounded-xl border-2 overflow-hidden text-left transition-all
+                                    disabled={availableStock(product) <= 0}
+                                    class="w-full h-36 rounded-xl border-2 overflow-hidden text-left transition-all
                                         focus:outline-none focus-visible:ring-2 focus-visible:ring-ring relative
                                         disabled:opacity-50 disabled:cursor-not-allowed
                                         {selectedProduct?.id === product.id
@@ -382,7 +449,7 @@
                                                 <span class="text-muted-foreground font-normal text-[10px]">/{product.unit}</span>
                                             </p>
                                             <p class="text-muted-foreground text-[10px] mt-0.5">
-                                                Stock: {Number(product.stock_quantity).toFixed(product.unit === "kg" ? 3 : 0)} {product.unit}
+                                                Available: {availableStock(product).toFixed(product.unit === "kg" ? 3 : 0)} {product.unit}
                                             </p>
                                         </div>
 
@@ -511,7 +578,7 @@
         </div>
 
         <!-- RIGHT: Cart (desktop) -->
-        <aside class="hidden lg:flex flex-col w-72 bg-card border-l border-border" aria-label="Shopping cart">
+        <aside class="hidden md:flex flex-col w-80 bg-card border-l border-border" aria-label="Shopping cart">
             <div class="px-4 py-3 border-b border-border flex items-center justify-between">
                 <h2 class="font-semibold text-sm flex items-center gap-1.5">
                     <ShoppingCart class="size-4" />
@@ -613,23 +680,24 @@
         </aside>
     </div>
 
-    <!-- Mobile: floating cart button -->
-    <div class="lg:hidden fixed bottom-4 right-4 z-50">
+    <!-- Mobile: bottom cart action bar -->
+    <div class="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 p-3 shadow-lg backdrop-blur">
         <Sheet.Root bind:open={cartOpen}>
-            <Sheet.Trigger>
-                <Button
-                    size="lg"
-                    class="rounded-full shadow-lg h-14 w-14 relative"
-                    aria-label="Open cart, {cartItems.length} items">
-                    <ShoppingCart class="size-5" />
-                    {#if cartItems.length > 0}
-                        <span class="absolute -top-1 -right-1 bg-destructive text-destructive-foreground
-                            rounded-full size-5 text-[10px] flex items-center justify-center font-bold">
-                            {cartItems.length}
-                        </span>
-                    {/if}
+            <div class="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+                <Sheet.Trigger>
+                    <Button variant="outline" class="h-12 gap-2" aria-label="Open cart, {cartItems.length} items">
+                        <ShoppingCart class="size-4" />
+                        {cartItems.length}
+                    </Button>
+                </Sheet.Trigger>
+                <div>
+                    <p class="text-[11px] text-muted-foreground">Total</p>
+                    <p class="text-lg font-bold text-primary">₱{total.toFixed(2)}</p>
+                </div>
+                <Button class="h-12 px-4" onclick={beginCheckout} disabled={cartItems.length === 0 || checkoutLoading}>
+                    Charge
                 </Button>
-            </Sheet.Trigger>
+            </div>
             <Sheet.Content side="bottom" class="h-[75vh] rounded-t-2xl">
                 <Sheet.Header>
                     <Sheet.Title class="flex items-center gap-2 text-sm">
@@ -704,85 +772,116 @@
     <Dialog.Content class="max-w-lg max-h-[90vh] overflow-y-auto">
         <Dialog.Header>
             <Dialog.Title>Cash Payment</Dialog.Title>
-            <Dialog.Description>
-                Record the amount received. Buyer details are optional unless required for the transaction.
-            </Dialog.Description>
+            <Dialog.Description>Fast checkout for cash sales. Add buyer or statutory discount details only when needed.</Dialog.Description>
         </Dialog.Header>
 
         <div class="space-y-4">
-            <div class="rounded-xl bg-primary/5 border border-primary/20 p-4 flex items-center justify-between">
-                <span class="text-sm text-muted-foreground">Amount due</span>
-                <span class="text-xl font-bold text-primary">PHP {payableTotal.toFixed(2)}</span>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="rounded-xl bg-muted/50 border p-4">
+                    <p class="text-xs text-muted-foreground">Amount due</p>
+                    <p class="text-2xl font-bold text-primary">PHP {payableTotal.toFixed(2)}</p>
+                </div>
+                <div class="rounded-xl bg-muted/50 border p-4">
+                    <p class="text-xs text-muted-foreground">Change</p>
+                    <p class="text-2xl font-bold">PHP {changeAmount.toFixed(2)}</p>
+                </div>
             </div>
+
             <div class="space-y-2">
                 <Label for="cash-tendered">Cash received</Label>
-                <Input id="cash-tendered" type="number" min={payableTotal} step="0.01" bind:value={cashTendered} />
-                <p class="text-xs text-muted-foreground">
-                    Change: PHP {Math.max(0, (Number(cashTendered) || 0) - payableTotal).toFixed(2)}
-                </p>
+                <Input id="cash-tendered" type="number" min={payableTotal} step="0.01" bind:value={cashTendered} class="h-12 text-lg font-semibold" />
             </div>
 
-            <Separator />
-            <div>
-                <p class="text-sm font-medium">Buyer information</p>
-                <p class="text-xs text-muted-foreground">Capture these details when requested or required for tax documentation.</p>
-            </div>
-            <div class="grid sm:grid-cols-2 gap-3">
-                <div class="space-y-2">
-                    <Label for="buyer-name">Registered name</Label>
-                    <Input id="buyer-name" bind:value={buyerName} />
-                </div>
-                <div class="space-y-2">
-                    <Label for="buyer-tin">TIN</Label>
-                    <Input id="buyer-tin" bind:value={buyerTin} />
-                </div>
-            </div>
-            <div class="space-y-2">
-                <Label for="buyer-address">Address</Label>
-                <Input id="buyer-address" bind:value={buyerAddress} />
-            </div>
-            <div class="space-y-2">
-                <Label for="buyer-style">Business style</Label>
-                <Input id="buyer-style" bind:value={buyerBusinessStyle} />
+            <div class="grid grid-cols-4 gap-2" aria-label="Quick cash amounts">
+                {#each quickCashAmounts as amount}
+                    <Button type="button" variant="outline" onclick={() => cashTendered = amount.toFixed(2)}>
+                        {amount === Math.ceil(payableTotal) ? "Exact" : `₱${amount}`}
+                    </Button>
+                {/each}
             </div>
 
-            <Separator />
-            <div>
-                <p class="text-sm font-medium">Statutory discount</p>
-                <p class="text-xs text-muted-foreground">Enter only a verified discount and retain the required ID details.</p>
+            <div class="grid grid-cols-2 gap-2">
+                <Button type="button" variant={showBuyerFields ? "default" : "outline"} onclick={() => showBuyerFields = !showBuyerFields}>
+                    Buyer Info
+                </Button>
+                <Button type="button" variant={showDiscountFields ? "default" : "outline"} onclick={() => showDiscountFields = !showDiscountFields}>
+                    Discount
+                </Button>
             </div>
-            <div class="grid sm:grid-cols-2 gap-3">
-                <div class="space-y-2">
-                    <Label for="discount-type">Discount type</Label>
-                    <select id="discount-type" bind:value={discountType}
-                        class="w-full h-8 rounded-lg border border-input bg-background px-3 text-sm">
-                        <option value="">No discount</option>
-                        <option value="senior_citizen">Senior Citizen</option>
-                        <option value="pwd">Person with Disability</option>
-                        <option value="naac">National Athlete/Coach</option>
-                        <option value="solo_parent">Solo Parent</option>
-                    </select>
-                </div>
-                <div class="space-y-2">
-                    <Label for="discount-amount">Discount amount</Label>
-                    <Input id="discount-amount" type="number" min="0" max={total} step="0.01"
-                        bind:value={discountAmount} disabled={!discountType} />
-                </div>
-            </div>
-            {#if discountType}
-                <div class="grid sm:grid-cols-2 gap-3">
-                    <div class="space-y-2">
-                        <Label for="beneficiary-name">Beneficiary name</Label>
-                        <Input id="beneficiary-name" bind:value={discountBeneficiaryName} />
+
+            {#if showBuyerFields}
+                <Separator />
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-sm font-medium">Buyer information</p>
+                        <p class="text-xs text-muted-foreground">Use only when the buyer requests named tax documentation.</p>
+                    </div>
+                    <div class="grid sm:grid-cols-2 gap-3">
+                        <div class="space-y-2">
+                            <Label for="buyer-name">Registered name</Label>
+                            <Input id="buyer-name" bind:value={buyerName} />
+                        </div>
+                        <div class="space-y-2">
+                            <Label for="buyer-tin">TIN</Label>
+                            <Input id="buyer-tin" bind:value={buyerTin} />
+                        </div>
                     </div>
                     <div class="space-y-2">
-                        <Label for="discount-id">ID number</Label>
-                        <Input id="discount-id" bind:value={discountIdNo} />
+                        <Label for="buyer-address">Address</Label>
+                        <Input id="buyer-address" bind:value={buyerAddress} />
+                    </div>
+                    <div class="space-y-2">
+                        <Label for="buyer-style">Business style</Label>
+                        <Input id="buyer-style" bind:value={buyerBusinessStyle} />
                     </div>
                 </div>
-                <div class="space-y-2">
-                    <Label for="beneficiary-tin">Beneficiary TIN, if any</Label>
-                    <Input id="beneficiary-tin" bind:value={discountBeneficiaryTin} />
+            {/if}
+
+            {#if showDiscountFields}
+                <Separator />
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-sm font-medium">Statutory discount</p>
+                        <p class="text-xs text-muted-foreground">Choose a verified discount and record the required ID details.</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        {#each [
+                            ["senior_citizen", "Senior"],
+                            ["pwd", "PWD"],
+                            ["naac", "Athlete/Coach"],
+                            ["solo_parent", "Solo Parent"],
+                        ] as option}
+                            <Button
+                                type="button"
+                                variant={discountType === option[0] ? "default" : "outline"}
+                                onclick={() => discountType = discountType === option[0] ? "" : option[0]}
+                                aria-pressed={discountType === option[0]}
+                            >
+                                {option[1]}
+                            </Button>
+                        {/each}
+                    </div>
+                    <div class="space-y-2">
+                        <Label for="discount-amount">Discount amount</Label>
+                        <Input id="discount-amount" type="number" min="0" max={total} step="0.01"
+                            bind:value={discountAmount} disabled={!discountType} />
+                    </div>
+                    {#if discountType}
+                        <div class="grid sm:grid-cols-2 gap-3">
+                            <div class="space-y-2">
+                                <Label for="beneficiary-name">Beneficiary name</Label>
+                                <Input id="beneficiary-name" bind:value={discountBeneficiaryName} />
+                            </div>
+                            <div class="space-y-2">
+                                <Label for="discount-id">ID number</Label>
+                                <Input id="discount-id" bind:value={discountIdNo} />
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <Label for="beneficiary-tin">Beneficiary TIN, if any</Label>
+                            <Input id="beneficiary-tin" bind:value={discountBeneficiaryTin} />
+                        </div>
+                    {/if}
                 </div>
             {/if}
         </div>
@@ -796,8 +895,51 @@
                 aria-busy={checkoutLoading}
             >
                 {#if checkoutLoading}<Loader2 class="size-4 animate-spin mr-2" />{/if}
-                Complete Cash Sale
+                Complete Sale
             </Button>
+        </Dialog.Footer>
+    </Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={receiptDialogOpen}>
+    <Dialog.Content class="max-w-md">
+        <Dialog.Header>
+            <Dialog.Title>Receipt Preview</Dialog.Title>
+            <Dialog.Description>Review the completed sale, then print or start the next transaction.</Dialog.Description>
+        </Dialog.Header>
+
+        {#if lastInvoice}
+            <div class="rounded-xl border bg-background p-4 font-mono text-xs space-y-3">
+                <div class="text-center border-b pb-3">
+                    <p class="font-bold text-sm">{lastInvoice.seller?.business_name ?? user?.business_name}</p>
+                    <p>Invoice #{lastInvoice.display_invoice_number ?? lastInvoice.invoice_number}</p>
+                    <p>{new Date(lastInvoice.date_time).toLocaleString("en-PH", { timeZone: "Asia/Manila" })}</p>
+                </div>
+                <ul class="space-y-2">
+                    {#each lastInvoice.items as item}
+                        <li>
+                            <div class="flex justify-between gap-3">
+                                <span>{item.description}</span>
+                                <span>PHP {Number(item.line_total).toFixed(2)}</span>
+                            </div>
+                            <p class="text-muted-foreground">{Number(item.quantity).toFixed(3)} x PHP {Number(item.unit_cost).toFixed(2)}</p>
+                        </li>
+                    {/each}
+                </ul>
+                <Separator />
+                <div class="space-y-1">
+                    <div class="flex justify-between"><span>Subtotal</span><span>PHP {Number(lastInvoice.subtotal).toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span>Discount</span><span>PHP {Number(lastInvoice.discount_amount).toFixed(2)}</span></div>
+                    <div class="flex justify-between font-bold text-sm"><span>Total</span><span>PHP {Number(lastInvoice.total_amount).toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span>Cash</span><span>PHP {Number(lastInvoice.cash_tendered).toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span>Change</span><span>PHP {Number(lastInvoice.change_amount).toFixed(2)}</span></div>
+                </div>
+            </div>
+        {/if}
+
+        <Dialog.Footer>
+            <Button variant="outline" onclick={nextTransaction}>Next Transaction</Button>
+            <Button onclick={printLastReceipt}>Print Receipt</Button>
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>

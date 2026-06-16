@@ -14,7 +14,9 @@ become an offline fallback later, but there is no SQLite to Supabase sync yet.
 
 1. Create a Supabase project.
 2. Copy the PostgreSQL connection string. Prefer the connection pooler string
-   for hosted services.
+   for hosted services and local setup if the direct database host does not
+   resolve. The pooler is usually IPv4-friendly; the direct
+   `db.<project-ref>.supabase.co` host may fail on networks without IPv6.
 3. Create a public Storage bucket named `product-images`.
 4. Copy the project URL and service role key for the backend only.
 5. Set backend environment variables:
@@ -35,7 +37,7 @@ configuration runs from the repo root:
 
 ```bash
 pip install -r requirements.txt
-cd backend && flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 "app:create_app()"
+cd backend && flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 wsgi:app
 ```
 
 If you created the Render service manually, use the same root-relative
@@ -43,7 +45,7 @@ commands:
 
 ```bash
 pip install -r requirements.txt
-cd backend && flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 "app:create_app()"
+cd backend && flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 wsgi:app
 ```
 
 The repo also has a root `requirements.txt` that forwards to
@@ -85,6 +87,13 @@ Build settings:
 - Install command: `npm ci`
 - Build command: `npm run build`
 - Output directory: `build`
+
+If you leave the Vercel project root as the repository root instead, the root
+`vercel.json` delegates to the frontend folder:
+
+- Install command: `cd frontend && npm ci`
+- Build command: `cd frontend && npm run build`
+- Output directory: `frontend/build`
 
 ## First Production Smoke Test
 

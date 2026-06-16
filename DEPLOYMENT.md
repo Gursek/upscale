@@ -60,16 +60,10 @@ AUTO_CREATE_DB=false
 DATABASE_URL=postgresql://...
 SECRET_KEY=...
 JWT_SECRET_KEY=...
-CORS_ORIGINS=https://your-vercel-domain.vercel.app
+CORS_ORIGINS=https://upscale-kappa.vercel.app
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_STORAGE_BUCKET=product-images
-```
-
-Start command:
-
-```bash
-flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 "app:create_app()"
 ```
 
 ## Frontend

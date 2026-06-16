@@ -1,4 +1,7 @@
-export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+const rawApiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000/api";
+export const API_BASE = rawApiBase.replace(/\/$/, "").endsWith("/api")
+    ? rawApiBase.replace(/\/$/, "")
+    : `${rawApiBase.replace(/\/$/, "")}/api`;
 
 export async function apiFetch(
     path: string,

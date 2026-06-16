@@ -30,7 +30,26 @@ Do not put the service role key in Vercel or frontend code.
 
 ## Backend
 
-Render uses `render.yaml`.
+Render can be created from `render.yaml` as a Blueprint. In that setup, Render
+uses `rootDir: backend`, so these commands are relative to the backend folder:
+
+```bash
+pip install -r requirements.txt
+flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 "app:create_app()"
+```
+
+If you created the Render service manually and left the root directory blank,
+use root-relative commands instead:
+
+```bash
+pip install -r backend/requirements.txt
+cd backend && flask --app app:create_app db upgrade && gunicorn --workers 2 --threads 4 --timeout 120 "app:create_app()"
+```
+
+The repo also has a root `requirements.txt` that forwards to
+`backend/requirements.txt`, so `pip install -r requirements.txt` works from the
+repo root too. The start command still needs to run inside `backend` unless
+Render's root directory is set to `backend`.
 
 Set these env vars in Render:
 

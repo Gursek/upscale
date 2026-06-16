@@ -12,7 +12,7 @@
 
 	onMount(async () => {
 		const publicPaths = ['/login', '/register'];
-		if (publicPaths.includes(page.url.pathname)) {
+		if (publicPaths.includes(page.url.pathname) || page.url.pathname.startsWith('/login') || page.url.pathname.startsWith('/register')) {
 			ready = true;
 			return;
 		}
@@ -20,6 +20,7 @@
 		const token = localStorage.getItem('access_token');
 		if (!token) {
 			await goto('/login', { replaceState: true });
+			ready = true;
 			return;
 		}
 
@@ -30,6 +31,7 @@
 		} catch {
 			auth.logout();
 			await goto('/login', { replaceState: true });
+			ready = true;
 		}
 	});
 </script>

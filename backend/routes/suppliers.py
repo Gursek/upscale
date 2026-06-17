@@ -7,6 +7,7 @@ from models.db import db
 from models.supplier import Supplier
 from services.compliance import add_audit_event
 from services.business_time import to_business_iso
+from services.rbac import roles_required
 
 suppliers_bp = Blueprint("suppliers", __name__)
 
@@ -36,6 +37,7 @@ def _log_action(user_id, entity_id, action, before=None, after=None):
 
 @suppliers_bp.route("/", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager")
 def list_suppliers():
     user_id = int(get_jwt_identity())
     suppliers = Supplier.query.filter_by(
@@ -46,6 +48,7 @@ def list_suppliers():
 
 @suppliers_bp.route("/archived", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager")
 def list_archived_suppliers():
     user_id = int(get_jwt_identity())
     suppliers = Supplier.query.filter_by(
@@ -56,6 +59,7 @@ def list_archived_suppliers():
 
 @suppliers_bp.route("/", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def create_supplier():
     user_id = int(get_jwt_identity())
     data = request.get_json()
@@ -80,6 +84,7 @@ def create_supplier():
 
 @suppliers_bp.route("/<int:supplier_id>", methods=["PUT"])
 @jwt_required()
+@roles_required("owner", "manager")
 def update_supplier(supplier_id):
     user_id = int(get_jwt_identity())
     supplier = Supplier.query.filter_by(id=supplier_id, user_id=user_id).first()
@@ -102,6 +107,7 @@ def update_supplier(supplier_id):
 
 @suppliers_bp.route("/<int:supplier_id>/archive", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def archive_supplier(supplier_id):
     user_id = int(get_jwt_identity())
     supplier = Supplier.query.filter_by(id=supplier_id, user_id=user_id).first()
@@ -121,6 +127,7 @@ def archive_supplier(supplier_id):
 
 @suppliers_bp.route("/<int:supplier_id>/restore", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def restore_supplier(supplier_id):
     user_id = int(get_jwt_identity())
     supplier = Supplier.query.filter_by(
@@ -142,6 +149,7 @@ def restore_supplier(supplier_id):
 
 @suppliers_bp.route("/<int:supplier_id>", methods=["DELETE"])
 @jwt_required()
+@roles_required("owner", "manager")
 def delete_supplier(supplier_id):
     user_id = int(get_jwt_identity())
     supplier = Supplier.query.filter_by(id=supplier_id, user_id=user_id).first()

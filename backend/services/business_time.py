@@ -1,8 +1,9 @@
 from datetime import date, datetime, time, timedelta, timezone
-from zoneinfo import ZoneInfo
+
+from utils.timezone import MANILA_TZ, format_manila_datetime, to_manila_datetime
 
 
-PHILIPPINE_TZ = ZoneInfo("Asia/Manila")
+PHILIPPINE_TZ = MANILA_TZ
 
 
 def business_now():
@@ -45,13 +46,8 @@ def local_interval_to_utc(start_local, end_local):
 
 
 def to_business_iso(value):
-    if value is None:
-        return None
-    utc_value = value.replace(tzinfo=timezone.utc)
-    return utc_value.astimezone(PHILIPPINE_TZ).isoformat()
+    return format_manila_datetime(value)
 
 
 def to_business_datetime(value):
-    if value is None:
-        return None
-    return value.replace(tzinfo=timezone.utc).astimezone(PHILIPPINE_TZ)
+    return to_manila_datetime(value)

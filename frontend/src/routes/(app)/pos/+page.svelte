@@ -2,21 +2,22 @@
     import { onMount } from "svelte";
     import { tick } from "svelte";
     import { auth } from "$lib/stores/auth";
-    import { cart, cartTotal } from "$lib/stores/cart";
-    import { apiJson, apiFetch, API_BASE } from "$lib/api";
+    import { cart, cartTotal, cartCount } from "$lib/stores/cart";
+    import { apiJson, apiFetch, API_BASE, revokeCurrentSession } from "$lib/api";
     import { goto } from "$app/navigation";
     import { Button } from "$lib/components/ui/button";
     import { Badge } from "$lib/components/ui/badge";
     import { Separator } from "$lib/components/ui/separator";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
+    import { subscribeQueueCount } from "$lib/offline-queue";
     import * as Sheet from "$lib/components/ui/sheet";
     import * as Dialog from "$lib/components/ui/dialog";
     import {
         ShoppingBasket, ShoppingCart, Trash2, Loader2, Search,
         Scale, FileBarChart, LayoutDashboard, LayoutGrid, Package, ReceiptText,
         Users, LogOut, Settings, Plus, Minus,
-        ScanLine, X
+        ScanLine, X, Ban, CloudOff
     } from "lucide-svelte";
 
     // --- State ---
@@ -33,9 +34,13 @@
     let cartOpen = $state(false);
     let checkoutDialogOpen = $state(false);
     let receiptDialogOpen = $state(false);
+    let voidDialogOpen = $state(false);
+    let voidLoading = $state(false);
+    let voidReason = $state("");
     let showBuyerFields = $state(false);
     let showDiscountFields = $state(false);
     let lastInvoice = $state<any>(null);
+    let lastCompletedInvoice = $state<any>(null);
     let cashTendered = $state("");
     let buyerName = $state("");
     let buyerTin = $state("");
@@ -47,6 +52,7 @@
     let discountBeneficiaryTin = $state("");
     let discountIdNo = $state("");
     let weightInputElement = $state<HTMLInputElement | null>(null);
+    let queuedInvoiceCount = $state(0);
 
     // --- Derived ---
     let user = $derived($auth);
@@ -74,6 +80,7 @@
 
     let cartItems = $derived($cart);
     let total = $derived($cartTotal);
+    let itemCount = $derived($cartCount);
     let payableTotal = $derived(Math.max(0, total - (Number(discountAmount) || 0)));
     let changeAmount = $derived(Math.max(0, (Number(cashTendered) || 0) - payableTotal));
     let quickCashAmounts = $derived.by(() => {
@@ -94,9 +101,13 @@
         const token = localStorage.getItem("access_token");
         if (!token) { goto("/login"); return; }
         const refresh = () => loadProducts(false);
+        const unsubscribeQueue = subscribeQueueCount((count) => queuedInvoiceCount = count);
         window.addEventListener("focus", refresh);
         loadProducts();
-        return () => window.removeEventListener("focus", refresh);
+        return () => {
+            unsubscribeQueue();
+            window.removeEventListener("focus", refresh);
+        };
     });
 
     // --- Actions ---
@@ -242,6 +253,7 @@
                 }),
             });
             lastInvoice = invoice;
+            lastCompletedInvoice = invoice;
             cart.clear();
             cartOpen = false;
             checkoutDialogOpen = false;
@@ -281,7 +293,51 @@
         weightInput = "";
     }
 
-    function logout() {
+    function selectVoidReason(reason: string) {
+        voidReason = reason;
+    }
+
+    function openVoidLastTransaction() {
+        if (!lastCompletedInvoice) {
+            error = "No completed transaction to void yet";
+            setTimeout(() => error = "", 3000);
+            return;
+        }
+        if (lastCompletedInvoice.status === "voided") {
+            error = "Last transaction is already voided";
+            setTimeout(() => error = "", 3000);
+            return;
+        }
+        voidReason = "";
+        voidDialogOpen = true;
+    }
+
+    async function voidLastTransaction() {
+        if (!lastCompletedInvoice || !voidReason.trim()) return;
+        voidLoading = true;
+        error = "";
+        try {
+            const response = await apiJson<any>(`/invoices/${lastCompletedInvoice.id}/void`, {
+                method: "POST",
+                body: JSON.stringify({ reason: voidReason.trim() }),
+            });
+            lastCompletedInvoice = response.invoice;
+            if (lastInvoice?.id === response.invoice.id) {
+                lastInvoice = response.invoice;
+            }
+            voidDialogOpen = false;
+            await loadProducts(false);
+            successMessage = `Voided invoice #${response.invoice.display_invoice_number ?? response.invoice.invoice_number}`;
+            setTimeout(() => successMessage = "", 5000);
+        } catch (e: any) {
+            error = e.message || "Could not void last transaction";
+        } finally {
+            voidLoading = false;
+        }
+    }
+
+    async function logout() {
+        await revokeCurrentSession();
         auth.logout();
         goto("/login");
     }
@@ -290,6 +346,8 @@
         all: "All", beef: "Beef", pork: "Pork",
         chicken: "Chicken", fish: "Fish", retail: "Retail", veggies: "Veggies"
     };
+
+    const quickVoidReasons = ["Wrong item", "Wrong quantity", "Customer cancelled"];
 
     const categoryEmoji: Record<string, string> = {
         beef: "🥩", pork: "🥓", chicken: "🍗", fish: "🐟", retail: "📦", veggies: "🥕"
@@ -314,6 +372,16 @@
             <span class="font-semibold text-sm tracking-tight">{user?.business_name ?? "UpScale POS"}</span>
         </div>
         <nav class="flex items-center" aria-label="Main navigation">
+            {#if queuedInvoiceCount > 0}
+                <div
+                    class="mr-2 flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-700"
+                    role="status"
+                    aria-label="{queuedInvoiceCount} queued offline invoices"
+                >
+                    <CloudOff class="size-3.5" />
+                    <span>{queuedInvoiceCount}</span>
+                </div>
+            {/if}
             <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Dashboard" onclick={() => goto("/dashboard")}>
                 <LayoutDashboard class="size-4" />
             </Button>
@@ -325,6 +393,16 @@
             </Button>
             <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="BIR reports" onclick={() => goto("/reports")}>
                 <FileBarChart class="size-4" />
+            </Button>
+            <Button
+                variant="ghost"
+                size="icon"
+                class="size-8 hover:bg-destructive! hover:text-destructive-foreground!"
+                aria-label="Void last transaction"
+                onclick={openVoidLastTransaction}
+                disabled={!lastCompletedInvoice || lastCompletedInvoice.status === "voided"}
+            >
+                <Ban class="size-4" />
             </Button>
             <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Suppliers" onclick={() => goto("/suppliers")}>
                 <Users class="size-4" />
@@ -586,7 +664,7 @@
                     {#if cartItems.length > 0}
                         <span class="bg-primary text-primary-foreground text-[10px] font-bold
                             rounded-full size-4 flex items-center justify-center">
-                            {cartItems.length}
+                            {itemCount}
                         </span>
                     {/if}
                 </h2>
@@ -685,9 +763,9 @@
         <Sheet.Root bind:open={cartOpen}>
             <div class="grid grid-cols-[auto_1fr_auto] items-center gap-2">
                 <Sheet.Trigger>
-                    <Button variant="outline" class="h-12 gap-2" aria-label="Open cart, {cartItems.length} items">
+                    <Button variant="outline" class="h-12 gap-2" aria-label="Open cart, {itemCount} items">
                         <ShoppingCart class="size-4" />
-                        {cartItems.length}
+                        {itemCount}
                     </Button>
                 </Sheet.Trigger>
                 <div>
@@ -702,7 +780,7 @@
                 <Sheet.Header>
                     <Sheet.Title class="flex items-center gap-2 text-sm">
                         <ShoppingCart class="size-4" />
-                        Cart ({cartItems.length})
+                        Cart ({itemCount})
                         {#if cartItems.length > 0}
                             <button onclick={() => cart.clear()}
                                 class="ml-auto text-xs text-muted-foreground hover:text-destructive">
@@ -896,6 +974,75 @@
             >
                 {#if checkoutLoading}<Loader2 class="size-4 animate-spin mr-2" />{/if}
                 Complete Sale
+            </Button>
+        </Dialog.Footer>
+    </Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={voidDialogOpen}>
+    <Dialog.Content class="max-w-md">
+        <Dialog.Header>
+            <Dialog.Title>Void Last Transaction</Dialog.Title>
+            <Dialog.Description>
+                This voids the most recent completed sale and restores its stock. A reason is required.
+            </Dialog.Description>
+        </Dialog.Header>
+
+        {#if lastCompletedInvoice}
+            <div class="rounded-xl border bg-muted/40 p-3 text-sm">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="font-medium">Invoice #{lastCompletedInvoice.display_invoice_number ?? lastCompletedInvoice.invoice_number}</span>
+                    <Badge variant={lastCompletedInvoice.status === "voided" ? "destructive" : "outline"}>
+                        {lastCompletedInvoice.status}
+                    </Badge>
+                </div>
+                <p class="text-xs text-muted-foreground mt-1">
+                    Total: ₱{Number(lastCompletedInvoice.total_amount).toFixed(2)}
+                </p>
+            </div>
+        {/if}
+
+        <div class="space-y-3">
+            <div class="space-y-2">
+                <Label>Common reasons</Label>
+                <div class="flex flex-wrap gap-2">
+                    {#each quickVoidReasons as reason}
+                        <Button
+                            type="button"
+                            variant={voidReason === reason ? "default" : "outline"}
+                            size="sm"
+                            onclick={() => selectVoidReason(reason)}
+                            aria-pressed={voidReason === reason}
+                        >
+                            {reason}
+                        </Button>
+                    {/each}
+                </div>
+            </div>
+            <div class="space-y-2">
+                <Label for="void-reason">Reason</Label>
+                <textarea
+                    id="void-reason"
+                    placeholder="Add or edit the void reason..."
+                    bind:value={voidReason}
+                    rows="3"
+                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                    aria-label="Void reason"
+                    required
+                ></textarea>
+            </div>
+        </div>
+
+        <Dialog.Footer>
+            <Button variant="outline" onclick={() => voidDialogOpen = false}>Cancel</Button>
+            <Button
+                variant="destructive"
+                onclick={voidLastTransaction}
+                disabled={!voidReason.trim() || voidLoading}
+                aria-busy={voidLoading}
+            >
+                {#if voidLoading}<Loader2 class="size-4 animate-spin mr-2" />{/if}
+                Void Sale
             </Button>
         </Dialog.Footer>
     </Dialog.Content>

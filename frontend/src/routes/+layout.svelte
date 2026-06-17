@@ -4,43 +4,120 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { apiJson } from '$lib/api';
+	import { API_BASE, apiJson, revokeCurrentSession } from '$lib/api';
+	import { drainOfflineQueue, subscribeQueueCount } from '$lib/offline-queue';
 	import { auth } from '$lib/stores/auth';
 
 	let { children } = $props();
 	let ready = $state(false);
+	let online = $state(true);
+	let queuedCount = $state(0);
+	const IDLE_TIMEOUT_MS = 8 * 60 * 60 * 1000;
 
-	onMount(async () => {
-		const publicPaths = ['/login', '/register'];
-		if (publicPaths.includes(page.url.pathname) || page.url.pathname.startsWith('/login') || page.url.pathname.startsWith('/register')) {
-			ready = true;
-			return;
-		}
+	onMount(() => {
+		let idleTimer: ReturnType<typeof setTimeout>;
 
-		const token = localStorage.getItem('access_token');
-		if (!token) {
-			await goto('/login', { replaceState: true });
-			ready = true;
-			return;
-		}
-
-		try {
-			const user = await apiJson<any>('/auth/me');
-			auth.login(user, token);
-			ready = true;
-		} catch {
+		async function logoutAndRedirect() {
+			await revokeCurrentSession();
 			auth.logout();
 			await goto('/login', { replaceState: true });
-			ready = true;
 		}
+
+		function resetIdleTimer() {
+			clearTimeout(idleTimer);
+			if (localStorage.getItem('access_token')) {
+				idleTimer = setTimeout(() => {
+					void logoutAndRedirect();
+				}, IDLE_TIMEOUT_MS);
+			}
+		}
+
+		online = navigator.onLine;
+		const unsubscribeQueue = subscribeQueueCount((count) => {
+			queuedCount = count;
+		});
+		const updateOnline = () => {
+			online = navigator.onLine;
+			if (online) {
+				void drainOfflineQueue(API_BASE, localStorage.getItem('access_token'));
+			}
+		};
+		window.addEventListener('online', updateOnline);
+		window.addEventListener('offline', updateOnline);
+		window.addEventListener('mousemove', resetIdleTimer);
+		window.addEventListener('keydown', resetIdleTimer);
+		window.addEventListener('touchstart', resetIdleTimer);
+
+		async function checkSession() {
+			const publicPaths = ['/login', '/register', '/offline'];
+			if (
+				publicPaths.includes(page.url.pathname) ||
+				page.url.pathname.startsWith('/login') ||
+				page.url.pathname.startsWith('/register')
+			) {
+				ready = true;
+				return;
+			}
+
+			const token = localStorage.getItem('access_token');
+			if (!token) {
+				await goto('/login', { replaceState: true });
+				ready = true;
+				return;
+			}
+
+			try {
+				const user = await apiJson<any>('/auth/me');
+				auth.login(user, token);
+				ready = true;
+			} catch {
+				auth.logout();
+				await goto('/login', { replaceState: true });
+				ready = true;
+			}
+		}
+
+		void checkSession();
+		resetIdleTimer();
+
+		return () => {
+			clearTimeout(idleTimer);
+			unsubscribeQueue();
+			window.removeEventListener('online', updateOnline);
+			window.removeEventListener('offline', updateOnline);
+			window.removeEventListener('mousemove', resetIdleTimer);
+			window.removeEventListener('keydown', resetIdleTimer);
+			window.removeEventListener('touchstart', resetIdleTimer);
+		};
 	});
 </script>
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
+	<link rel="manifest" href="/manifest.webmanifest" />
+	<meta name="theme-color" content="#8B2635" />
 </svelte:head>
 
 {#if ready}
+	<div
+		class="fixed bottom-3 right-3 z-80 flex items-center gap-2 rounded-full border bg-background/95 px-3 py-1.5 text-xs shadow-sm backdrop-blur"
+		role="status"
+		aria-live="polite"
+	>
+		<span
+			class="size-2 rounded-full {online ? 'bg-green-600' : queuedCount > 0 ? 'bg-amber-500' : 'bg-destructive'}"
+			aria-hidden="true"
+		></span>
+		<span>
+			{#if online}
+				Online{#if queuedCount > 0} · syncing {queuedCount}{/if}
+			{:else if queuedCount > 0}
+				Offline · {queuedCount} queued
+			{:else}
+				Offline
+			{/if}
+		</span>
+	</div>
 	{@render children()}
 {:else}
 	<div class="min-h-screen bg-muted/30 flex items-center justify-center px-4">

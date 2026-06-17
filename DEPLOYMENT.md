@@ -10,6 +10,18 @@
 The hosted app is online-only. SQLite remains for local development and can
 become an offline fallback later, but there is no SQLite to Supabase sync yet.
 
+## Supabase Sync
+
+The `invoices.synced` column exists only as a reserved field for a future
+Supabase sync worker. It is not active in the current hosted app, and the
+dashboard intentionally shows cloud sync as "coming soon" instead of displaying
+a misleading unsynced count.
+
+To activate sync later, build a queue that marks locally created records as
+unsynced, pushes them to Supabase when connectivity returns, verifies the remote
+write, then marks the local record as synced. Add conflict handling, retry
+backoff, and visible sync status before exposing any sync count to users.
+
 ## Supabase
 
 1. Create a Supabase project.

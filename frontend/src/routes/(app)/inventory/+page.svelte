@@ -13,7 +13,7 @@
     import {
         Plus, Pencil, Archive, RotateCcw, Trash2,
         Loader2, Package, AlertTriangle,
-        Search, PackagePlus, SlidersHorizontal, History, ImagePlus
+        Search, PackagePlus, PackageMinus, SlidersHorizontal, History, ImagePlus
     } from "lucide-svelte";
 
     interface HistoryEntry {
@@ -55,6 +55,7 @@
     let restockNotes = $state("");
     let adjustQuantity = $state("");
     let adjustReason = $state("");
+    let adjustMode = $state<"set" | "deduct">("set");
     let uploadingImage = $state(false);
 
     // --- Form state ---
@@ -133,11 +134,20 @@
         restockDialogOpen = true;
     }
 
-    function openAdjustDialog(product: any) {
+    function openAdjustDialog(product: any, mode: "set" | "deduct" = "set") {
         selectedProduct = product;
-        adjustQuantity = String(product.stock_quantity);
+        adjustMode = mode;
+        adjustQuantity = mode === "set" ? String(product.stock_quantity) : "";
         adjustReason = "";
         adjustDialogOpen = true;
+    }
+
+    function selectRestockReason(reason: string) {
+        restockNotes = reason;
+    }
+
+    function selectAdjustReason(reason: string) {
+        adjustReason = reason;
     }
 
     async function restockProduct() {
@@ -146,13 +156,17 @@
             flash("Enter a valid quantity", true);
             return;
         }
+        if (!restockNotes.trim()) {
+            flash("Reason is required for stock additions", true);
+            return;
+        }
         try {
             await apiJson("/inventory/restock", {
                 method: "POST",
                 body: JSON.stringify({
                     product_id: selectedProduct.id,
                     quantity: qty,
-                    notes: restockNotes.trim() || null,
+                    notes: restockNotes.trim(),
                 }),
             });
             flash(`Restocked ${selectedProduct.name}`);
@@ -164,13 +178,19 @@
     }
 
     async function adjustProduct() {
-        const newQty = parseFloat(adjustQuantity);
-        if (isNaN(newQty) || newQty < 0) {
-            flash("Enter a valid stock quantity", true);
+        const enteredQty = parseFloat(adjustQuantity);
+        if (isNaN(enteredQty) || enteredQty < 0) {
+            flash(adjustMode === "deduct" ? "Enter a valid quantity to deduct" : "Enter a valid stock quantity", true);
             return;
         }
         if (!adjustReason.trim()) {
             flash("Reason is required", true);
+            return;
+        }
+        const currentStock = Number(selectedProduct.stock_quantity);
+        const newQty = adjustMode === "deduct" ? currentStock - enteredQty : enteredQty;
+        if (newQty < 0) {
+            flash(`Cannot deduct more than current stock (${formatStock(currentStock, selectedProduct.unit)})`, true);
             return;
         }
         try {
@@ -182,7 +202,7 @@
                     reason: adjustReason.trim(),
                 }),
             });
-            flash(`Adjusted stock for ${selectedProduct.name}`);
+            flash(adjustMode === "deduct" ? `Deducted stock for ${selectedProduct.name}` : `Adjusted stock for ${selectedProduct.name}`);
             adjustDialogOpen = false;
             await loadProducts();
         } catch (e: any) {
@@ -201,6 +221,10 @@
         sale_deduction: "Sale",
         void_restock: "Void restock",
     };
+
+    const restockReasons = ["Supplier delivery", "Opening inventory", "Returned item"];
+    const stockDeductionReasons = ["Mistake", "Theft", "Spoilage"];
+    const stockAdjustmentReasons = ["Physical count correction", "Wrong previous entry", "Unit conversion correction"];
 
     // --- Form helpers ---
     function openCreateDialog() {
@@ -288,12 +312,14 @@
     // --- CRUD ---
     async function saveProduct() {
         try {
-            const payload = {
+            const payload: Record<string, unknown> = {
                 ...form,
                 price: parseFloat(form.price),
-                stock_quantity: parseFloat(form.stock_quantity || "0"),
                 low_stock_threshold: parseFloat(form.low_stock_threshold || "0"),
             };
+            if (!isEditing) {
+                payload.stock_quantity = parseFloat(form.stock_quantity || "0");
+            }
             if (isEditing) {
                 await apiJson(`/products/${selectedProduct.id}`, {
                     method: "PUT",
@@ -469,6 +495,11 @@
                                         aria-label="Restock {product.name}"
                                         onclick={() => openRestockDialog(product)}>
                                         <PackagePlus class="size-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon"
+                                        aria-label="Deduct stock for {product.name}"
+                                        onclick={() => openAdjustDialog(product, "deduct")}>
+                                        <PackageMinus class="size-4" />
                                     </Button>
                                     <Button variant="ghost" size="icon"
                                         aria-label="Adjust stock for {product.name}"
@@ -669,11 +700,23 @@
             </div>
 
             <div class="grid grid-cols-2 gap-3">
-                <div class="space-y-2">
-                    <Label for="stock">Stock Quantity</Label>
-                    <Input id="stock" type="number" min="0" step="0.001"
-                        placeholder="0" bind:value={form.stock_quantity} />
-                </div>
+                {#if isEditing}
+                    <div class="space-y-2 rounded-lg border bg-muted/30 px-3 py-2">
+                        <p class="text-sm font-medium">Current Stock</p>
+                        <p class="text-lg font-semibold">
+                            {selectedProduct ? formatStock(selectedProduct.stock_quantity, selectedProduct.unit) : "0"}
+                        </p>
+                        <p class="text-xs text-muted-foreground">
+                            Use Restock, Deduct, or Adjust from the product list to change stock with an audit reason.
+                        </p>
+                    </div>
+                {:else}
+                    <div class="space-y-2">
+                        <Label for="stock">Opening Stock Quantity</Label>
+                        <Input id="stock" type="number" min="0" step="0.001"
+                            placeholder="0" bind:value={form.stock_quantity} />
+                    </div>
+                {/if}
                 <div class="space-y-2">
                     <Label for="threshold">Low Stock Alert</Label>
                     <Input id="threshold" type="number" min="0" step="0.001"
@@ -715,14 +758,30 @@
                     placeholder="0" bind:value={restockQuantity} />
             </div>
             <div class="space-y-2">
-                <Label for="restock-notes">Notes <span class="text-muted-foreground">(optional)</span></Label>
+                <Label>Common reasons</Label>
+                <div class="flex flex-wrap gap-2">
+                    {#each restockReasons as reason}
+                        <Button
+                            type="button"
+                            variant={restockNotes === reason ? "default" : "outline"}
+                            size="sm"
+                            onclick={() => selectRestockReason(reason)}
+                            aria-pressed={restockNotes === reason}
+                        >
+                            {reason}
+                        </Button>
+                    {/each}
+                </div>
+            </div>
+            <div class="space-y-2">
+                <Label for="restock-notes">Reason</Label>
                 <Input id="restock-notes" placeholder="e.g. Delivery from supplier"
-                    bind:value={restockNotes} />
+                    bind:value={restockNotes} required />
             </div>
         </div>
         <Dialog.Footer>
             <Button variant="outline" onclick={() => restockDialogOpen = false}>Cancel</Button>
-            <Button onclick={restockProduct} disabled={!restockQuantity}>Restock</Button>
+            <Button onclick={restockProduct} disabled={!restockQuantity || !restockNotes.trim()}>Restock</Button>
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>
@@ -731,16 +790,39 @@
 <Dialog.Root bind:open={adjustDialogOpen}>
     <Dialog.Content class="max-w-sm">
         <Dialog.Header>
-            <Dialog.Title>Adjust Stock — {selectedProduct?.name}</Dialog.Title>
+            <Dialog.Title>{adjustMode === "deduct" ? "Deduct Stock" : "Adjust Stock"} - {selectedProduct?.name}</Dialog.Title>
             <Dialog.Description>
-                Set the correct stock level. A reason is required for audit trail.
+                {adjustMode === "deduct"
+                    ? "Record shrinkage, spoilage, theft, or mistakes. A reason is required for audit trail."
+                    : "Set the correct stock level. A reason is required for audit trail."}
             </Dialog.Description>
         </Dialog.Header>
         <div class="space-y-4 py-2">
             <div class="space-y-2">
-                <Label for="adjust-qty">New stock quantity</Label>
+                <Label for="adjust-qty">{adjustMode === "deduct" ? "Quantity to deduct" : "New stock quantity"}</Label>
                 <Input id="adjust-qty" type="number" min="0" step="0.001"
                     placeholder="0" bind:value={adjustQuantity} />
+                {#if adjustMode === "deduct" && selectedProduct}
+                    <p class="text-xs text-muted-foreground">
+                        Current stock: {formatStock(selectedProduct.stock_quantity, selectedProduct.unit)}
+                    </p>
+                {/if}
+            </div>
+            <div class="space-y-2">
+                <Label>Common reasons</Label>
+                <div class="flex flex-wrap gap-2">
+                    {#each (adjustMode === "deduct" ? stockDeductionReasons : stockAdjustmentReasons) as reason}
+                        <Button
+                            type="button"
+                            variant={adjustReason === reason ? "default" : "outline"}
+                            size="sm"
+                            onclick={() => selectAdjustReason(reason)}
+                            aria-pressed={adjustReason === reason}
+                        >
+                            {reason}
+                        </Button>
+                    {/each}
+                </div>
             </div>
             <div class="space-y-2">
                 <Label for="adjust-reason">Reason</Label>
@@ -751,13 +833,14 @@
                     rows="2"
                     class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                     aria-label="Adjustment reason"
+                    required
                 ></textarea>
             </div>
         </div>
         <Dialog.Footer>
             <Button variant="outline" onclick={() => adjustDialogOpen = false}>Cancel</Button>
             <Button onclick={adjustProduct} disabled={!adjustQuantity || !adjustReason.trim()}>
-                Adjust
+                {adjustMode === "deduct" ? "Deduct" : "Adjust"}
             </Button>
         </Dialog.Footer>
     </Dialog.Content>

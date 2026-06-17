@@ -5,11 +5,13 @@ from decimal import Decimal
 import json
 
 from models.db import db
+from models.audit_log import AuditLog
 from models.product import Product
 from models.user import User
 from services.compliance import add_audit_event
 from models.ejournal import EJournalEntry
 from services.business_time import business_today, to_business_iso
+from services.rbac import roles_required
 
 inventory_bp = Blueprint("inventory", __name__)
 
@@ -50,6 +52,7 @@ def _log_ejournal(user_id, product_id, snapshot):
 
 @inventory_bp.route("/restock", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def restock_product():
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
@@ -72,7 +75,10 @@ def restock_product():
     if not product:
         return jsonify({"error": "Product not found"}), 404
 
-    notes = (data.get("notes") or "").strip() or None
+    notes = (data.get("notes") or "").strip()
+    if not notes:
+        return jsonify({"error": "Reason is required for stock additions"}), 400
+
     before = _stock_snapshot(product)
     product.stock_quantity += quantity
     product.updated_at = datetime.utcnow()
@@ -101,6 +107,7 @@ def restock_product():
 
 @inventory_bp.route("/adjust", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def adjust_stock():
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
@@ -163,6 +170,7 @@ def adjust_stock():
 
 @inventory_bp.route("/history", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager")
 def inventory_history():
     user_id = int(get_jwt_identity())
     product_id = request.args.get("product_id", type=int)

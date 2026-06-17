@@ -53,7 +53,7 @@
                     vat_status: vatStatus,
                 }),
             });
-            auth.login(res.user, res.access_token);
+            auth.login(res.user, res.access_token, res.refresh_token);
             goto("/dashboard");
         } catch (e: any) {
             error = e.message;

@@ -20,12 +20,14 @@ function createAuthStore() {
     return {
         subscribe,
         set,
-        login(user: User, token: string) {
+        login(user: User, token: string, refreshToken?: string) {
             localStorage.setItem("access_token", token);
+            if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
             set(user);
         },
         logout() {
             localStorage.removeItem("access_token");
+            localStorage.removeItem("refresh_token");
             set(null);
         },
         update,

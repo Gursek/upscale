@@ -11,6 +11,8 @@ from models.db import db
 from models.product import Product
 from services.compliance import add_audit_event
 from services.business_time import to_business_iso
+from services.rbac import roles_required
+from utils.validators import validate_product_payload
 
 products_bp = Blueprint("products", __name__)
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
@@ -62,6 +64,7 @@ def _log_action(user_id, entity_id, action, before=None, after=None):
 
 @products_bp.route("/upload-image", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def upload_product_image():
     user_id = int(get_jwt_identity())
     image = request.files.get("image")
@@ -131,26 +134,28 @@ def list_archived_products():
 
 @products_bp.route("/", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def create_product():
     user_id = int(get_jwt_identity())
-    data = request.get_json()
+    data = request.get_json() or {}
 
-    required = ["name", "category", "pricing_type", "price"]
-    if not all(field in data and data[field] not in (None, "") for field in required):
-        return jsonify({"error": "Missing required fields"}), 400
+    try:
+        validated = validate_product_payload(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     product = Product(
         user_id=user_id,
         name=data["name"],
-        category=data["category"],
+        category=validated["category"],
         cut_type=data.get("cut_type"),
-        pricing_type=data["pricing_type"],
-        price=data["price"],
-        unit=data.get("unit", "kg" if data["category"] != "retail" else "pcs"),
+        pricing_type=validated["pricing_type"],
+        price=validated["price"],
+        unit=validated.get("unit") or ("kg" if validated["category"] != "retail" else "pcs"),
         sku=data.get("sku"),
-        stock_quantity=data.get("stock_quantity", 0),
-        low_stock_threshold=data.get("low_stock_threshold", 0),
-        tax_classification=data.get("tax_classification") or _default_tax_classification(data["category"]),
+        stock_quantity=validated.get("stock_quantity", 0),
+        low_stock_threshold=validated.get("low_stock_threshold", 0),
+        tax_classification=validated.get("tax_classification") or _default_tax_classification(validated["category"]),
         image_url=data.get("image_url"),
     )
     db.session.add(product)
@@ -164,6 +169,7 @@ def create_product():
 
 @products_bp.route("/<int:product_id>", methods=["PUT"])
 @jwt_required()
+@roles_required("owner", "manager")
 def update_product(product_id):
     user_id = int(get_jwt_identity())
     product = Product.query.filter_by(id=product_id, user_id=user_id).first()
@@ -171,13 +177,22 @@ def update_product(product_id):
         return jsonify({"error": "Product not found"}), 404
 
     before = _product_to_dict(product)
-    data = request.get_json()
+    data = request.get_json() or {}
+    if "stock_quantity" in data:
+        return jsonify({
+            "error": "Use inventory restock or adjustment endpoints to change stock quantity"
+        }), 400
+
+    try:
+        validated = validate_product_payload(data, partial=True)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     for field in ["name", "category", "cut_type", "pricing_type", "price", "unit",
-                   "sku", "stock_quantity", "low_stock_threshold", "tax_classification",
-                   "image_url", "is_active"]:
+                   "sku", "low_stock_threshold", "tax_classification", "image_url",
+                   "is_active"]:
         if field in data:
-            setattr(product, field, data[field])
+            setattr(product, field, validated[field] if field in validated else data[field])
 
     product.updated_at = datetime.utcnow()
     db.session.flush()
@@ -190,6 +205,7 @@ def update_product(product_id):
 
 @products_bp.route("/<int:product_id>/archive", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def archive_product(product_id):
     user_id = int(get_jwt_identity())
     product = Product.query.filter_by(id=product_id, user_id=user_id).first()
@@ -209,6 +225,7 @@ def archive_product(product_id):
 
 @products_bp.route("/<int:product_id>/restore", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def restore_product(product_id):
     user_id = int(get_jwt_identity())
     product = Product.query.filter_by(id=product_id, user_id=user_id, is_archived=True).first()
@@ -228,6 +245,7 @@ def restore_product(product_id):
 
 @products_bp.route("/<int:product_id>", methods=["DELETE"])
 @jwt_required()
+@roles_required("owner", "manager")
 def delete_product(product_id):
     user_id = int(get_jwt_identity())
     product = Product.query.filter_by(id=product_id, user_id=user_id).first()

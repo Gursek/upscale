@@ -19,10 +19,13 @@ from services.tax import resolve_tax_classification, compute_invoice_totals
 from services.business_time import (
     business_day_utc_bounds,
     business_today,
+    to_business_datetime,
     to_business_iso,
     utc_now_naive,
 )
 from services.compliance import add_audit_event, canonical_json, seller_snapshot
+from services.discounts import compute_statutory_discount
+from services.rbac import roles_required
 
 invoices_bp = Blueprint("invoices", __name__)
 
@@ -58,6 +61,7 @@ def _invoice_to_dict(inv: Invoice) -> dict:
         "discount_beneficiary_name": inv.discount_beneficiary_name,
         "discount_beneficiary_tin": inv.discount_beneficiary_tin,
         "discount_amount": float(inv.discount_amount),
+        "vat_deduction": float(inv.vat_deduction or 0),
         "status": inv.status,
         "voided_at": to_business_iso(inv.voided_at),
         "voided_reason": inv.voided_reason,
@@ -80,6 +84,7 @@ def _invoice_to_dict(inv: Invoice) -> dict:
 
 @invoices_bp.route("/", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier")
 def create_invoice():
     user_id = int(get_jwt_identity())
     user = User.query.filter_by(id=user_id).with_for_update().first()
@@ -146,22 +151,24 @@ def create_invoice():
         user.vat_status,
     )
 
-    try:
-        discount_amount = Decimal(str(data.get("discount_amount", 0)))
-    except Exception:
-        return jsonify({"error": "Invalid discount amount"}), 400
-    if discount_amount < 0:
-        return jsonify({"error": "Discount amount cannot be negative"}), 400
     discount_type = data.get("discount_type") or None
-    allowed_discount_types = {"senior_citizen", "pwd", "naac", "solo_parent"}
-    if discount_amount > 0:
-        if discount_type not in allowed_discount_types:
-            return jsonify({"error": "Select a valid statutory discount type"}), 400
+    try:
+        discount = compute_statutory_discount(
+            discount_type,
+            totals["subtotal"],
+            totals["vatable_sales"],
+            totals["vat_amount"],
+        )
+    except ValueError:
+        return jsonify({"error": "Select a valid statutory discount type"}), 400
+
+    if discount["discount_type"]:
         if not (data.get("discount_id_no") or "").strip():
             return jsonify({"error": "Discount beneficiary ID number is required"}), 400
-        if not (data.get("discount_beneficiary_name") or "").strip():
-            return jsonify({"error": "Discount beneficiary name is required"}), 400
-    total_amount = totals["total_amount"] - discount_amount
+
+    discount_amount = discount["discount_amount"]
+    vat_deduction = discount["vat_deduction"]
+    total_amount = totals["total_amount"] - discount["total_deduction"]
     if total_amount < 0:
         return jsonify({"error": "Discount cannot exceed the invoice total"}), 400
 
@@ -202,11 +209,12 @@ def create_invoice():
         percentage_tax_amount=totals["percentage_tax_amount"],
         subtotal=totals["subtotal"],
         total_amount=total_amount,
-        discount_type=discount_type,
+        discount_type=discount["discount_type"],
         discount_id_no=(data.get("discount_id_no") or "").strip() or None,
         discount_beneficiary_name=(data.get("discount_beneficiary_name") or "").strip() or None,
         discount_beneficiary_tin=(data.get("discount_beneficiary_tin") or "").strip() or None,
         discount_amount=discount_amount,
+        vat_deduction=vat_deduction,
         status="active",
     )
     db.session.add(invoice)
@@ -265,6 +273,7 @@ def create_invoice():
 
 @invoices_bp.route("/", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier", "auditor")
 def list_invoices():
     user_id = int(get_jwt_identity())
     query = Invoice.query.filter_by(user_id=user_id)
@@ -296,6 +305,7 @@ def list_invoices():
 
 @invoices_bp.route("/export", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier", "auditor")
 def export_invoices():
     user_id = int(get_jwt_identity())
     date_value = request.args.get("date")
@@ -344,7 +354,7 @@ def export_invoices():
     for row, invoice in enumerate(invoices, start=5):
         values = [
             invoice.invoice_number,
-            invoice.date_time.strftime("%H:%M:%S"),
+            to_business_datetime(invoice.date_time).strftime("%H:%M:%S"),
             invoice.status.title(),
             invoice.invoice_type.title(),
             len(invoice.items),
@@ -389,7 +399,7 @@ def export_invoices():
             values = [
                 invoice.invoice_number,
                 invoice.status.title(),
-                invoice.date_time.strftime("%H:%M:%S"),
+                to_business_datetime(invoice.date_time).strftime("%H:%M:%S"),
                 item.description,
                 float(item.quantity),
                 float(item.unit_cost),
@@ -431,6 +441,7 @@ def export_invoices():
 
 @invoices_bp.route("/<int:invoice_id>", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier", "auditor")
 def get_invoice(invoice_id):
     user_id = int(get_jwt_identity())
     invoice = Invoice.query.filter_by(id=invoice_id, user_id=user_id).first()
@@ -441,6 +452,7 @@ def get_invoice(invoice_id):
 
 @invoices_bp.route("/<int:invoice_id>/void", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier")
 def void_invoice(invoice_id):
     user_id = int(get_jwt_identity())
     invoice = Invoice.query.filter_by(id=invoice_id, user_id=user_id).first()
@@ -448,7 +460,7 @@ def void_invoice(invoice_id):
         return jsonify({"error": "Invoice not found"}), 404
 
     if invoice.status == "voided":
-        return jsonify({"error": "Invoice already voided"}), 400
+        return jsonify({"error": "Invoice already voided"}), 409
     invoice_business_date = to_business_iso(invoice.date_time)[:10]
     existing_z = ZReading.query.filter_by(
         user_id=user_id,
@@ -574,6 +586,7 @@ section{{margin:8px 0}} @media print{{button{{display:none}}}}
 <div><span>VAT Amount</span><span>PHP {data['vat_amount']:,.2f}</span></div>
 <div><span>SSPT Sales</span><span>PHP {data['sspt_sales']:,.2f}</span></div>
 <div><span>Discount</span><span>PHP {data['discount_amount']:,.2f}</span></div>
+<div><span>VAT Deduction</span><span>PHP {data['vat_deduction']:,.2f}</span></div>
 <div class="grand"><span>TOTAL</span><span>PHP {data['total_amount']:,.2f}</span></div>
 <div><span>Cash</span><span>PHP {data['cash_tendered']:,.2f}</span></div>
 <div><span>Change</span><span>PHP {data['change_amount']:,.2f}</span></div>
@@ -592,6 +605,7 @@ section{{margin:8px 0}} @media print{{button{{display:none}}}}
 
 @invoices_bp.route("/<int:invoice_id>/print", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier")
 def print_invoice(invoice_id):
     user_id = int(get_jwt_identity())
     invoice = Invoice.query.filter_by(id=invoice_id, user_id=user_id).first()
@@ -602,6 +616,7 @@ def print_invoice(invoice_id):
 
 @invoices_bp.route("/<int:invoice_id>/reprint", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier")
 def reprint_invoice(invoice_id):
     user_id = int(get_jwt_identity())
     invoice = Invoice.query.filter_by(id=invoice_id, user_id=user_id).with_for_update().first()

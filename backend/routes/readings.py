@@ -7,6 +7,7 @@ import json
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash
 
 from models.db import db
@@ -22,6 +23,7 @@ from services.business_time import (
     to_business_iso,
 )
 from services.compliance import add_audit_event
+from services.rbac import roles_required
 
 readings_bp = Blueprint("readings", __name__)
 
@@ -89,6 +91,7 @@ def _z_to_dict(r: ZReading) -> dict:
 
 @readings_bp.route("/x", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier")
 def create_x_reading():
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
@@ -123,6 +126,7 @@ def create_x_reading():
 
 @readings_bp.route("/z", methods=["POST"])
 @jwt_required()
+@roles_required("owner", "manager")
 def create_z_reading():
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
@@ -158,13 +162,18 @@ def create_z_reading():
         terminal_id=user.machine_identification_number,
         after=_z_to_dict(reading),
     )
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": f"Z-Reading already generated for {business_date}"}), 409
 
     return jsonify(_z_to_dict(reading)), 201
 
 
 @readings_bp.route("/x", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier", "auditor")
 def list_x_readings():
     user_id = int(get_jwt_identity())
     readings = XReading.query.filter_by(user_id=user_id).order_by(XReading.generated_at.desc()).all()
@@ -173,6 +182,7 @@ def list_x_readings():
 
 @readings_bp.route("/z", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier", "auditor")
 def list_z_readings():
     user_id = int(get_jwt_identity())
     readings = ZReading.query.filter_by(user_id=user_id).order_by(ZReading.generated_at.desc()).all()
@@ -201,6 +211,7 @@ def _category_breakdown(user_id, business_date):
 
 @readings_bp.route("/z/<int:reading_id>/export", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier", "auditor")
 def export_z_reading(reading_id):
     user_id = int(get_jwt_identity())
     reading = ZReading.query.filter_by(id=reading_id, user_id=user_id).first()
@@ -335,6 +346,7 @@ def export_z_reading(reading_id):
 
 @readings_bp.route("/ejournal/export", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier", "auditor")
 def export_ejournal():
     user_id = int(get_jwt_identity())
     requested_date = request.args.get("date")
@@ -449,6 +461,7 @@ def export_ejournal():
 
 @readings_bp.route("/statutory-discounts/export", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "manager", "cashier", "auditor")
 def export_statutory_discounts():
     user_id = int(get_jwt_identity())
     requested_date = request.args.get("date")

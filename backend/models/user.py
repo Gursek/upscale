@@ -7,6 +7,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default="owner")
 
     business_name = db.Column(db.String(150), nullable=False)
     registered_name = db.Column(db.String(150))
@@ -45,6 +46,7 @@ class User(db.Model):
 
     password_reset_otp_hash = db.Column(db.String(255))
     password_reset_expires_at = db.Column(db.DateTime)
+    tokens_revoked_before = db.Column(db.DateTime)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

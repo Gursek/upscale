@@ -40,12 +40,14 @@ class Invoice(db.Model):
     discount_beneficiary_name = db.Column(db.String(150))
     discount_beneficiary_tin = db.Column(db.String(20))
     discount_amount = db.Column(db.Numeric(10, 2), default=0)
+    vat_deduction = db.Column(db.Numeric(10, 2), default=0)
 
     status = db.Column(db.String(10), default="active")
     voided_at = db.Column(db.DateTime)
     voided_reason = db.Column(db.Text)
     voided_by = db.Column(db.String(150))
 
+    # Reserved for Supabase sync — not yet implemented.
     synced = db.Column(db.Boolean, default=False)
     reprint_count = db.Column(db.Integer, default=0)
     last_reprinted_at = db.Column(db.DateTime)

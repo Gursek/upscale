@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from models.db import db
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 
 
@@ -38,7 +38,8 @@ def create_app(test_config=None):
     if not app.config["JWT_SECRET_KEY"] and os.getenv("FLASK_ENV") == "production":
         raise RuntimeError("JWT_SECRET_KEY is required in production")
     app.config["JWT_SECRET_KEY"] = app.config["JWT_SECRET_KEY"] or "dev-jwt-secret-change-me"
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=12)
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=8)
+    app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
     if test_config:
         app.config.update(test_config)
 
@@ -46,6 +47,27 @@ def create_app(test_config=None):
     migrate.init_app(app, db)
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
     jwt = JWTManager(app)
+
+    @jwt.token_in_blocklist_loader
+    def token_in_blocklist(jwt_header, jwt_payload):
+        from models.token_blocklist import TokenBlocklist
+        from models.user import User
+
+        jti = jwt_payload.get("jti")
+        if jti and TokenBlocklist.query.filter_by(jti=jti).first():
+            return True
+
+        identity = jwt_payload.get("sub")
+        issued_at = jwt_payload.get("iat")
+        if not identity or not issued_at:
+            return False
+
+        user = User.query.get(int(identity))
+        if not user or not user.tokens_revoked_before:
+            return False
+
+        token_issued_at = datetime.fromtimestamp(issued_at, timezone.utc).replace(tzinfo=None)
+        return token_issued_at <= user.tokens_revoked_before
 
     from routes.products import products_bp
     from routes.invoices import invoices_bp

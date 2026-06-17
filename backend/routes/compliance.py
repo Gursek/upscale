@@ -12,7 +12,8 @@ from models.audit_log import AuditLog
 from models.user import User
 from services.compliance import add_audit_event, canonical_json, compliance_readiness
 from models.db import db
-from services.business_time import business_day_utc_bounds
+from services.business_time import business_day_utc_bounds, to_business_datetime
+from services.rbac import roles_required
 
 
 compliance_bp = Blueprint("compliance", __name__)
@@ -20,6 +21,7 @@ compliance_bp = Blueprint("compliance", __name__)
 
 @compliance_bp.route("/readiness", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "auditor")
 def readiness():
     user_id = int(get_jwt_identity())
     user = User.query.get(user_id)
@@ -31,6 +33,7 @@ def readiness():
 
 @compliance_bp.route("/audit-integrity", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "auditor")
 def audit_integrity():
     user_id = int(get_jwt_identity())
     entries = AuditLog.query.filter_by(user_id=user_id).order_by(AuditLog.id).all()
@@ -73,6 +76,7 @@ def audit_integrity():
 
 @compliance_bp.route("/audit-log/export", methods=["GET"])
 @jwt_required()
+@roles_required("owner", "auditor")
 def export_audit_log():
     user_id = int(get_jwt_identity())
     date_value = request.args.get("date")
@@ -94,7 +98,7 @@ def export_audit_log():
     ws = wb.active
     ws.title = "Activity Log"
     headers = [
-        "Event ID", "Date/Time UTC", "Actor", "Terminal", "IP Address",
+        "Event ID", "Date/Time Manila", "Actor", "Terminal", "IP Address",
         "Entity", "Entity ID", "Action", "Before", "After",
         "Previous Hash", "Event Hash",
     ]
@@ -106,7 +110,7 @@ def export_audit_log():
     for row, entry in enumerate(entries, start=2):
         values = [
             entry.id,
-            entry.created_at.isoformat(sep=" ", timespec="seconds"),
+            to_business_datetime(entry.created_at).strftime("%Y-%m-%d %H:%M:%S"),
             entry.actor or "",
             entry.terminal_id or "",
             entry.ip_address or "",

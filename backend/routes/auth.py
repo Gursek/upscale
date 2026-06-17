@@ -1,14 +1,23 @@
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_jwt,
+    get_jwt_identity,
+    jwt_required,
+)
 from datetime import datetime, timedelta
 import os
 import random
 import smtplib
 from email.message import EmailMessage
 from models.db import db
+from models.token_blocklist import TokenBlocklist
 from models.user import User
 from services.compliance import add_audit_event, compliance_readiness
+from services.rbac import roles_required
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -33,10 +42,29 @@ DATE_FIELDS = (
 )
 
 
+def _create_tokens(user):
+    return {
+        "access_token": create_access_token(identity=str(user.id)),
+        "refresh_token": create_refresh_token(identity=str(user.id)),
+    }
+
+
+def _revoke_token_jti(jti, token_type, user_id):
+    if not jti or TokenBlocklist.query.filter_by(jti=jti).first():
+        return
+    db.session.add(TokenBlocklist(
+        jti=jti,
+        token_type=token_type,
+        user_id=user_id,
+        revoked_at=datetime.utcnow(),
+    ))
+
+
 def _user_to_dict(user):
     result = {
         "id": user.id,
         "email": user.email,
+        "role": user.role or "owner",
         "business_name": user.business_name,
         "registered_name": user.registered_name,
         "business_address": user.business_address,
@@ -186,6 +214,7 @@ def register():
     user = User(
         email=data["email"],
         password_hash=generate_password_hash(data["password"]),
+        role="owner",
         business_name=data["business_name"],
         registered_name=data.get("registered_name") or data["business_name"],
         business_address=data.get("business_address"),
@@ -204,7 +233,7 @@ def register():
     )
     db.session.commit()
 
-    access_token = create_access_token(identity=str(user.id))
+    tokens = _create_tokens(user)
     add_audit_event(
         user_id=user.id,
         entity_type="session",
@@ -216,7 +245,7 @@ def register():
     )
     db.session.commit()
     return jsonify({
-        "access_token": access_token,
+        **tokens,
         "user": _user_to_dict(user)
     }), 201
 
@@ -229,7 +258,7 @@ def login():
     if not user or not check_password_hash(user.password_hash, data.get("password", "")):
         return jsonify({"error": "Invalid email or password"}), 401
 
-    access_token = create_access_token(identity=str(user.id))
+    tokens = _create_tokens(user)
     add_audit_event(
         user_id=user.id,
         entity_type="session",
@@ -241,9 +270,59 @@ def login():
     )
     db.session.commit()
     return jsonify({
-        "access_token": access_token,
+        **tokens,
         "user": _user_to_dict(user)
     }), 200
+
+
+@auth_bp.route("/refresh", methods=["POST"])
+@jwt_required(refresh=True)
+def refresh():
+    user_id = get_jwt_identity()
+    return jsonify({
+        "access_token": create_access_token(identity=str(user_id)),
+    }), 200
+
+
+@auth_bp.route("/logout", methods=["POST"])
+@jwt_required()
+def logout():
+    user_id = int(get_jwt_identity())
+    current_token = get_jwt()
+    _revoke_token_jti(current_token.get("jti"), current_token.get("type") or "access", user_id)
+
+    data = request.get_json(silent=True) or {}
+    refresh_token = data.get("refresh_token")
+    if refresh_token:
+        try:
+            refresh_payload = decode_token(refresh_token)
+            if str(refresh_payload.get("sub")) == str(user_id):
+                _revoke_token_jti(refresh_payload.get("jti"), refresh_payload.get("type") or "refresh", user_id)
+        except Exception:
+            pass
+
+    db.session.commit()
+    return jsonify({"message": "Logged out"}), 200
+
+
+@auth_bp.route("/logout-all", methods=["POST"])
+@jwt_required()
+@roles_required("owner")
+def logout_all():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    user.tokens_revoked_before = datetime.utcnow()
+    add_audit_event(
+        user_id=user.id,
+        entity_type="session",
+        entity_id=user.id,
+        action="logout_all",
+        actor=user.email,
+        terminal_id=user.machine_identification_number,
+        after={"tokens_revoked_before": user.tokens_revoked_before},
+    )
+    db.session.commit()
+    return jsonify({"message": "All sessions logged out"}), 200
 
 
 @auth_bp.route("/onboarding", methods=["POST"])
@@ -336,6 +415,7 @@ def get_current_user():
 
 @auth_bp.route("/me", methods=["PUT"])
 @jwt_required()
+@roles_required("owner")
 def update_current_user():
     user_id = int(get_jwt_identity())
     user = User.query.get(user_id)

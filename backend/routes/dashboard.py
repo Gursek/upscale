@@ -93,17 +93,15 @@ def get_dashboard():
         ), Decimal("0"))
         chart.append({
             "label": bucket_start.strftime(label_format),
-            "start": bucket_start.isoformat(),
+            "start": bucket_start.strftime("%Y-%m-%d %H:%M:%S"),
             "total": float(total),
         })
-
-    pending_sync_count = Invoice.query.filter_by(user_id=user_id, synced=False).count()
 
     return jsonify({
         "today_sales": float(today_sales),
         "transaction_count": len(today_invoices),
         "low_stock_count": len(low_stock_products),
-        "pending_sync_count": pending_sync_count,
+        "sync_status": "not_configured",
         "recent_transactions": [
             {
                 "id": invoice.id,

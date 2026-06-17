@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
     import { goto } from "$app/navigation";
     import { auth } from "$lib/stores/auth";
-    import { apiJson } from "$lib/api";
+    import { apiJson, revokeCurrentSession } from "$lib/api";
     import { Button } from "$lib/components/ui/button";
     import * as Dialog from "$lib/components/ui/dialog";
     import {
@@ -143,7 +143,8 @@
         }
     }
 
-    function logout() {
+    async function logout() {
+        await revokeCurrentSession();
         auth.logout();
         goto("/login");
     }
@@ -172,13 +173,13 @@
             <div class="flex items-center gap-1 text-xs {online ? 'text-green-700' : 'text-destructive'}" role="status">
                 {#if online}<Wifi class="size-3.5" /> Online{:else}<CloudOff class="size-3.5" /> Offline{/if}
             </div>
-            <Button variant="ghost" size="icon" class="hover:bg-primary hover:text-primary-foreground" aria-label="Refresh dashboard" onclick={loadDashboard}>
+            <Button variant="ghost" size="icon" class="hover:bg-primary! hover:text-primary-foreground!" aria-label="Refresh dashboard" onclick={loadDashboard}>
                 <RefreshCw class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="hover:bg-primary hover:text-primary-foreground" aria-label="Settings" onclick={() => goto("/settings")}>
+            <Button variant="ghost" size="icon" class="hover:bg-primary! hover:text-primary-foreground!" aria-label="Settings" onclick={() => goto("/settings")}>
                 <Settings class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="hover:bg-primary hover:text-primary-foreground" aria-label="Log out" onclick={logout}>
+            <Button variant="ghost" size="icon" class="hover:bg-primary! hover:text-primary-foreground!" aria-label="Log out" onclick={logout}>
                 <LogOut class="size-4" />
             </Button>
         </div>
@@ -211,18 +212,18 @@
                     <p class="text-xl font-semibold mt-1">{dashboard.low_stock_count}</p>
                 </div>
                 <div class="bg-background rounded-xl border p-4">
-                    <CloudOff class="size-5 text-primary mb-3" />
-                    <p class="text-xs text-muted-foreground">Database mode</p>
-                    <p class="text-xl font-semibold mt-1">Online</p>
+                    <CloudOff class="size-5 text-muted-foreground mb-3" />
+                    <p class="text-xs text-muted-foreground">Cloud sync</p>
+                    <p class="text-xl font-semibold mt-1">Coming soon</p>
                 </div>
             </section>
 
             <nav class="grid grid-cols-2 md:grid-cols-5 gap-3" aria-label="Quick access">
-                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/pos")}><ShoppingCart class="size-5" /> Open POS</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/inventory")}><Package class="size-5" /> Inventory</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/invoices")}><ReceiptText class="size-5" /> Invoices</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/suppliers")}><Truck class="size-5" /> Suppliers</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:bg-primary hover:text-primary-foreground active:translate-y-0" onclick={() => goto("/reports")}><FileBarChart class="size-5" /> Reports</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/pos")}><ShoppingCart class="size-5" /> Open POS</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/inventory")}><Package class="size-5" /> Inventory</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/invoices")}><ReceiptText class="size-5" /> Invoices</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/suppliers")}><Truck class="size-5" /> Suppliers</Button>
+                <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/reports")}><FileBarChart class="size-5" /> Reports</Button>
             </nav>
 
             <div class="grid lg:grid-cols-2 gap-4">

@@ -30,11 +30,17 @@ function createCartStore() {
                     return items;
                 }
                 if (existing) {
-                    existing.quantity = requested;
-                    existing.stock_quantity = available;
-                    existing.line_total = Number((existing.unit_cost * existing.quantity).toFixed(2));
-                    result = { added: true, quantity: existing.quantity, available };
-                    return [...items];
+                    const line_total = Number((existing.unit_cost * requested).toFixed(2));
+                    result = { added: true, quantity: requested, available };
+                    return items.map((item) => item.product_id === product.id
+                        ? {
+                            ...item,
+                            quantity: requested,
+                            stock_quantity: available,
+                            line_total,
+                        }
+                        : item
+                    );
                 }
                 result = { added: true, quantity, available };
                 return [
@@ -101,4 +107,6 @@ export const cartTotal = derived(cart, ($cart) =>
     Number($cart.reduce((sum, item) => sum + item.line_total, 0).toFixed(2))
 );
 
-export const cartCount = derived(cart, ($cart) => $cart.length);
+export const cartCount = derived(cart, ($cart) =>
+    $cart.reduce((sum, item) => sum + item.quantity, 0)
+);

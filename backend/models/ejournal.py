@@ -69,3 +69,7 @@ class ZReading(db.Model):
     ending_invoice_no = db.Column(db.String(6))
     cash_sales = db.Column(db.Numeric(14, 2), default=0)
     reset_counter = db.Column(db.Integer, default=0)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "business_date", name="uq_z_reading_user_business_date"),
+    )

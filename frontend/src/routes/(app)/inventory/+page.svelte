@@ -7,13 +7,15 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { Badge } from "$lib/components/ui/badge";
+    import * as Select from "$lib/components/ui/select";
     import * as Dialog from "$lib/components/ui/dialog";
     import * as AlertDialog from "$lib/components/ui/alert-dialog";
     import AppQuickNav from "$lib/components/AppQuickNav.svelte";
     import {
         Plus, Pencil, Archive, RotateCcw, Trash2,
         Loader2, Package, AlertTriangle,
-        Search, PackagePlus, PackageMinus, SlidersHorizontal, History, ImagePlus
+        Search, PackagePlus, PackageMinus, SlidersHorizontal, History, ImagePlus,
+        ChevronLeft, ChevronRight, X
     } from "lucide-svelte";
 
     interface HistoryEntry {
@@ -42,6 +44,12 @@
     let successMessage = $state("");
     let searchQuery = $state("");
     let activeTab = $state<"active" | "archived" | "history">("active");
+    let categoryFilter = $state("all");
+    let stockFilter = $state("all");
+    let pricingFilter = $state("all");
+    let sortBy = $state("name_asc");
+    let currentPage = $state(1);
+    const productsPerPage = 25;
 
     // --- Dialog state ---
     let productDialogOpen = $state(false);
@@ -57,6 +65,7 @@
     let adjustReason = $state("");
     let adjustMode = $state<"set" | "deduct">("set");
     let uploadingImage = $state(false);
+    let cutTypeSelection = $state("");
 
     // --- Form state ---
     let form = $state({
@@ -75,20 +84,106 @@
 
     // --- Derived ---
     let user = $derived($auth);
+    const cutTypesByCategory: Record<string, string[]> = {
+        chicken: ["Breast", "Thigh", "Drumstick", "Wing", "Liver", "Gizzard", "Feet", "Neck", "Whole", "Other"],
+        pork: ["Belly (Liempo)", "Kasim (Shoulder)", "Pigue (Ham)", "Chop", "Ribs", "Liver", "Tenderloin", "Whole", "Other"],
+        beef: ["Brisket", "Chuck", "Sirloin", "Short Rib", "Shank", "Tenderloin", "Ground", "Whole", "Other"],
+    };
+    let availableCutTypes = $derived(cutTypesByCategory[form.category] ?? []);
 
-    let filteredProducts = $derived(
-        products.filter((p) =>
+    let availableCategories = $derived(
+        [...new Set(products.map((product) => product.category))].sort()
+    );
+
+    function stockStatus(product: any) {
+        const stock = Number(product.stock_quantity);
+        const threshold = Number(product.low_stock_threshold);
+        if (stock <= 0) return "out";
+        if (threshold > 0 && stock <= threshold) return "low";
+        return "in";
+    }
+
+    let filteredProducts = $derived.by(() => {
+        const query = searchQuery.trim().toLowerCase();
+        const result = products.filter((product) => {
+            const matchesSearch = !query ||
+                product.name.toLowerCase().includes(query) ||
+                (product.sku ?? "").toLowerCase().includes(query) ||
+                (product.cut_type ?? "").toLowerCase().includes(query);
+            const matchesCategory = categoryFilter === "all" || product.category === categoryFilter;
+            const matchesStock = stockFilter === "all" || stockStatus(product) === stockFilter;
+            const matchesPricing = pricingFilter === "all" || product.pricing_type === pricingFilter;
+            return matchesSearch && matchesCategory && matchesStock && matchesPricing;
+        });
+
+        return result.sort((a, b) => {
+            if (sortBy === "name_desc") return b.name.localeCompare(a.name);
+            if (sortBy === "stock_asc") return Number(a.stock_quantity) - Number(b.stock_quantity);
+            if (sortBy === "stock_desc") return Number(b.stock_quantity) - Number(a.stock_quantity);
+            if (sortBy === "price_asc") return Number(a.price) - Number(b.price);
+            if (sortBy === "price_desc") return Number(b.price) - Number(a.price);
+            if (sortBy === "updated_desc") {
+                return new Date(b.updated_at ?? 0).getTime() - new Date(a.updated_at ?? 0).getTime();
+            }
+            return a.name.localeCompare(b.name);
+        });
+    });
+
+    let totalPages = $derived(Math.max(1, Math.ceil(filteredProducts.length / productsPerPage)));
+    let paginatedProducts = $derived(
+        filteredProducts.slice((currentPage - 1) * productsPerPage, currentPage * productsPerPage)
+    );
+    let pageStart = $derived(filteredProducts.length === 0 ? 0 : (currentPage - 1) * productsPerPage + 1);
+    let pageEnd = $derived(Math.min(currentPage * productsPerPage, filteredProducts.length));
+    let lowStockCount = $derived(products.filter((product) => stockStatus(product) === "low").length);
+    let hasActiveFilters = $derived(
+        categoryFilter !== "all" ||
+        stockFilter !== "all" ||
+        pricingFilter !== "all" ||
+        searchQuery.trim() !== ""
+    );
+
+    $effect(() => {
+        searchQuery;
+        categoryFilter;
+        stockFilter;
+        pricingFilter;
+        sortBy;
+        currentPage = 1;
+    });
+
+    $effect(() => {
+        if (currentPage > totalPages) currentPage = totalPages;
+    });
+
+    let filteredArchived = $derived(
+        archivedProducts.filter((p) =>
             p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            p.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (p.sku ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
             (p.cut_type ?? "").toLowerCase().includes(searchQuery.toLowerCase())
         )
     );
 
-    let filteredArchived = $derived(
-        archivedProducts.filter((p) =>
-            p.name.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-    );
+    function clearFilters() {
+        searchQuery = "";
+        categoryFilter = "all";
+        stockFilter = "all";
+        pricingFilter = "all";
+    }
+
+    function toggleLowStockFilter() {
+        stockFilter = stockFilter === "low" ? "all" : "low";
+    }
+
+    function formatUpdated(value: string | null | undefined) {
+        if (!value) return "Not recorded";
+        return new Date(value).toLocaleDateString("en-PH", {
+            timeZone: "Asia/Manila",
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+        });
+    }
 
     // --- Load ---
     onMount(async () => {
@@ -236,6 +331,7 @@
             tax_classification: "exempt",
             image_url: "",
         };
+        cutTypeSelection = "";
         productDialogOpen = true;
     }
 
@@ -255,6 +351,8 @@
             tax_classification: product.tax_classification,
             image_url: product.image_url ?? "",
         };
+        const categoryCuts = cutTypesByCategory[product.category] ?? [];
+        cutTypeSelection = categoryCuts.includes(product.cut_type) ? product.cut_type : (product.cut_type ? "Other" : "");
         productDialogOpen = true;
     }
 
@@ -265,11 +363,19 @@
             form.unit = "pcs";
             form.tax_classification = "standard";
             form.cut_type = "";
+            cutTypeSelection = "";
         } else {
             form.pricing_type = "per_kg";
             form.unit = "kg";
             form.tax_classification = "exempt";
+            form.cut_type = "";
+            cutTypeSelection = "";
         }
+    }
+
+    function onCutTypeChange(value: string) {
+        cutTypeSelection = value;
+        form.cut_type = value === "Other" ? "" : value;
     }
 
     function defaultCategory() {
@@ -401,23 +507,14 @@
         <div class="bg-green-500/10 text-green-700 text-sm px-4 py-2 text-center" role="status">{successMessage}</div>
     {/if}
 
-    <div class="max-w-4xl mx-auto p-4 space-y-4">
+    <div class="mx-auto max-w-7xl space-y-4 p-3 sm:p-4">
 
-        <!-- Search + Tabs -->
-        <div class="flex flex-col sm:flex-row gap-3">
-            <div class="relative flex-1">
-                <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                <Input
-                    placeholder="Search products..."
-                    bind:value={searchQuery}
-                    class="pl-9"
-                    aria-label="Search products"
-                />
-            </div>
-            <div class="flex rounded-md border overflow-hidden text-sm">
+        <!-- Tabs -->
+        <div class="overflow-x-auto">
+            <div class="flex min-w-max rounded-md border bg-background text-sm">
                 <button
                     onclick={() => switchTab("active")}
-                    class="px-4 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                    class="min-h-11 px-4 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
                         {activeTab === 'active' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}"
                     aria-pressed={activeTab === "active"}
                 >
@@ -425,7 +522,7 @@
                 </button>
                 <button
                     onclick={() => switchTab("archived")}
-                    class="px-4 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                    class="min-h-11 border-l px-4 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
                         {activeTab === 'archived' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}"
                     aria-pressed={activeTab === "archived"}
                 >
@@ -433,7 +530,7 @@
                 </button>
                 <button
                     onclick={() => switchTab("history")}
-                    class="px-4 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                    class="min-h-11 border-l px-4 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
                         {activeTab === 'history' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}"
                     aria-pressed={activeTab === "history"}
                 >
@@ -441,6 +538,119 @@
                 </button>
             </div>
         </div>
+
+        {#if activeTab === "active"}
+            <section class="rounded-xl border bg-background p-3 shadow-sm" aria-label="Inventory filters">
+                <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_repeat(4,minmax(9rem,auto))]">
+                    <div class="relative">
+                        <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            placeholder="Search name, SKU, or cut type"
+                            bind:value={searchQuery}
+                            class="h-11 pl-9"
+                            aria-label="Search products by name, SKU, or cut type"
+                        />
+                    </div>
+
+                    <Select.Root type="single" bind:value={categoryFilter}>
+                        <Select.Trigger class="h-11 w-full" aria-label="Filter by category">
+                            <span data-slot="select-value">
+                                {categoryFilter === "all" ? "All categories" : categoryLabels[categoryFilter] ?? categoryFilter}
+                            </span>
+                        </Select.Trigger>
+                        <Select.Content>
+                            <Select.Item value="all">All categories</Select.Item>
+                            {#each availableCategories as category}
+                                <Select.Item value={category}>{categoryLabels[category] ?? category}</Select.Item>
+                            {/each}
+                        </Select.Content>
+                    </Select.Root>
+
+                    <Select.Root type="single" bind:value={stockFilter}>
+                        <Select.Trigger class="h-11 w-full" aria-label="Filter by stock status">
+                            <span data-slot="select-value">
+                                {stockFilter === "all" ? "All stock" :
+                                    stockFilter === "in" ? "In stock" :
+                                    stockFilter === "low" ? "Low stock" : "Out of stock"}
+                            </span>
+                        </Select.Trigger>
+                        <Select.Content>
+                            <Select.Item value="all">All stock</Select.Item>
+                            <Select.Item value="in">In stock</Select.Item>
+                            <Select.Item value="low">Low stock</Select.Item>
+                            <Select.Item value="out">Out of stock</Select.Item>
+                        </Select.Content>
+                    </Select.Root>
+
+                    <Select.Root type="single" bind:value={pricingFilter}>
+                        <Select.Trigger class="h-11 w-full" aria-label="Filter by pricing type">
+                            <span data-slot="select-value">
+                                {pricingFilter === "all" ? "All pricing" :
+                                    pricingFilter === "per_kg" ? "Per kilogram" : "Fixed price"}
+                            </span>
+                        </Select.Trigger>
+                        <Select.Content>
+                            <Select.Item value="all">All pricing</Select.Item>
+                            <Select.Item value="per_kg">Per kilogram</Select.Item>
+                            <Select.Item value="fixed">Fixed price</Select.Item>
+                        </Select.Content>
+                    </Select.Root>
+
+                    <Select.Root type="single" bind:value={sortBy}>
+                        <Select.Trigger class="h-11 w-full" aria-label="Sort products">
+                            <span data-slot="select-value">
+                                {sortBy === "name_asc" ? "Name A-Z" :
+                                    sortBy === "name_desc" ? "Name Z-A" :
+                                    sortBy === "stock_asc" ? "Stock: low first" :
+                                    sortBy === "stock_desc" ? "Stock: high first" :
+                                    sortBy === "price_asc" ? "Price: low first" :
+                                    sortBy === "price_desc" ? "Price: high first" : "Recently updated"}
+                            </span>
+                        </Select.Trigger>
+                        <Select.Content>
+                            <Select.Item value="name_asc">Name A-Z</Select.Item>
+                            <Select.Item value="name_desc">Name Z-A</Select.Item>
+                            <Select.Item value="stock_asc">Stock: low first</Select.Item>
+                            <Select.Item value="stock_desc">Stock: high first</Select.Item>
+                            <Select.Item value="price_asc">Price: low first</Select.Item>
+                            <Select.Item value="price_desc">Price: high first</Select.Item>
+                            <Select.Item value="updated_desc">Recently updated</Select.Item>
+                        </Select.Content>
+                    </Select.Root>
+                </div>
+
+                <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                        type="button"
+                        variant={stockFilter === "low" ? "default" : "outline"}
+                        class="h-10"
+                        onclick={toggleLowStockFilter}
+                        aria-pressed={stockFilter === "low"}
+                    >
+                        <AlertTriangle class="mr-2 size-4" />
+                        Low stock ({lowStockCount})
+                    </Button>
+                    {#if hasActiveFilters}
+                        <Button type="button" variant="ghost" class="h-10" onclick={clearFilters}>
+                            <X class="mr-2 size-4" /> Clear filters
+                        </Button>
+                    {/if}
+                    <p class="ml-auto text-xs text-muted-foreground">
+                        {filteredProducts.length} of {products.length} products
+                    </p>
+                </div>
+            </section>
+        {:else if activeTab === "archived"}
+            <div class="relative max-w-md">
+                <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                    placeholder="Search archived products"
+                    bind:value={searchQuery}
+                    class="h-11 pl-9"
+                    aria-label="Search archived products"
+                />
+            </div>
+        {/if}
 
         <!-- Product list -->
         {#if loading}
@@ -450,16 +660,34 @@
         {:else}
             {#if activeTab === "active"}
                 {#if filteredProducts.length === 0}
-                    <div class="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
+                    <div class="flex min-h-56 flex-col items-center justify-center gap-2 rounded-xl border bg-background text-muted-foreground">
                         <Package class="size-8" />
-                        <p class="text-sm">No products yet</p>
-                        <Button variant="outline" size="sm" onclick={openCreateDialog}>Add your first product</Button>
+                        <p class="text-sm font-medium">
+                            {products.length === 0 ? "No products yet" : "No products match these filters"}
+                        </p>
+                        {#if products.length === 0}
+                            <Button variant="outline" size="sm" onclick={openCreateDialog}>Add your first product</Button>
+                        {:else}
+                            <Button variant="outline" size="sm" onclick={clearFilters}>Clear filters</Button>
+                        {/if}
                     </div>
                 {:else}
-                    <div class="space-y-2" role="list" aria-label="Active products">
-                        {#each filteredProducts as product (product.id)}
+                    <div class="overflow-hidden rounded-xl border bg-background shadow-sm">
+                        <div class="overflow-x-auto">
+                            <div class="grid min-w-[960px] grid-cols-[minmax(260px,1.4fr)_110px_110px_130px_120px_110px_260px] gap-3 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+                                <span>Product</span>
+                                <span>Category</span>
+                                <span>Pricing</span>
+                                <span>Stock</span>
+                                <span>Low alert</span>
+                                <span>Price</span>
+                                <span class="text-right">Actions</span>
+                            </div>
+                            <div class="min-w-[960px] divide-y" role="list" aria-label="Active products">
+                        {#each paginatedProducts as product (product.id)}
                             <div role="listitem"
-                                class="bg-background rounded-xl border p-4 flex items-center gap-4">
+                                class="grid grid-cols-[minmax(260px,1.4fr)_110px_110px_130px_120px_110px_260px] items-center gap-3 bg-background px-4 py-3">
+                                <div class="flex min-w-0 items-center gap-3">
                                 <div class="size-12 rounded-lg bg-muted overflow-hidden flex items-center justify-center text-2xl shrink-0">
                                     {#if productImageUrl(product.image_url)}
                                         <img src={productImageUrl(product.image_url)} alt="" class="size-full object-cover" />
@@ -473,45 +701,53 @@
                                         {#if product.cut_type}
                                             <span class="text-muted-foreground text-xs">({product.cut_type})</span>
                                         {/if}
-                                        <Badge variant="outline" class="text-xs capitalize">
-                                            {categoryLabels[product.category] ?? product.category}
-                                        </Badge>
-                                        {#if product.stock_quantity <= product.low_stock_threshold && product.low_stock_threshold > 0}
-                                            <Badge variant="destructive" class="text-xs gap-1">
-                                                <AlertTriangle class="size-3" /> Low stock
-                                            </Badge>
-                                        {/if}
                                     </div>
                                     <div class="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                                        <span>₱{Number(product.price).toFixed(2)}/{product.unit}</span>
-                                        <span>Stock: {Number(product.stock_quantity).toFixed(product.unit === 'kg' ? 3 : 0)} {product.unit}</span>
                                         {#if product.sku}
                                             <span>SKU: {product.sku}</span>
                                         {/if}
                                     </div>
+                                    <p class="mt-0.5 text-[11px] text-muted-foreground">Updated {formatUpdated(product.updated_at)}</p>
                                 </div>
-                                <div class="flex items-center gap-1 shrink-0">
-                                    <Button variant="ghost" size="icon"
+                                </div>
+                                <div>
+                                    <Badge variant="outline">{categoryLabels[product.category] ?? product.category}</Badge>
+                                </div>
+                                <p class="text-sm">{product.pricing_type === "per_kg" ? "Per kg" : "Fixed"}</p>
+                                <div class="space-y-1">
+                                    <p class="whitespace-nowrap text-sm font-semibold">{formatStock(product.stock_quantity, product.unit)}</p>
+                                    {#if stockStatus(product) === "out"}
+                                        <Badge variant="destructive">Out</Badge>
+                                    {:else if stockStatus(product) === "low"}
+                                        <Badge variant="destructive" class="gap-1"><AlertTriangle class="size-3" /> Low</Badge>
+                                    {:else}
+                                        <Badge variant="secondary">In stock</Badge>
+                                    {/if}
+                                </div>
+                                <p class="whitespace-nowrap text-sm">{formatStock(product.low_stock_threshold, product.unit)}</p>
+                                <p class="whitespace-nowrap text-sm font-medium">₱{Number(product.price).toFixed(2)}</p>
+                                <div class="flex items-center justify-end gap-1 shrink-0">
+                                    <Button variant="ghost" size="icon" class="size-10"
                                         aria-label="Restock {product.name}"
                                         onclick={() => openRestockDialog(product)}>
                                         <PackagePlus class="size-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon"
+                                    <Button variant="ghost" size="icon" class="size-10"
                                         aria-label="Deduct stock for {product.name}"
                                         onclick={() => openAdjustDialog(product, "deduct")}>
                                         <PackageMinus class="size-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon"
+                                    <Button variant="ghost" size="icon" class="size-10"
                                         aria-label="Adjust stock for {product.name}"
                                         onclick={() => openAdjustDialog(product)}>
                                         <SlidersHorizontal class="size-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon"
+                                    <Button variant="ghost" size="icon" class="size-10"
                                         aria-label="Edit {product.name}"
                                         onclick={() => openEditDialog(product)}>
                                         <Pencil class="size-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon"
+                                    <Button variant="ghost" size="icon" class="size-10"
                                         aria-label="Archive {product.name}"
                                         onclick={() => { selectedProduct = product; archiveDialogOpen = true; }}>
                                         <Archive class="size-4" />
@@ -519,6 +755,36 @@
                                 </div>
                             </div>
                         {/each}
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-3 border-t px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                            <p class="text-muted-foreground">
+                                Showing {pageStart}-{pageEnd} of {filteredProducts.length}
+                            </p>
+                            <div class="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    class="size-10"
+                                    onclick={() => currentPage = Math.max(1, currentPage - 1)}
+                                    disabled={currentPage === 1}
+                                    aria-label="Previous product page"
+                                >
+                                    <ChevronLeft class="size-4" />
+                                </Button>
+                                <span class="min-w-24 text-center">Page {currentPage} of {totalPages}</span>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    class="size-10"
+                                    onclick={() => currentPage = Math.min(totalPages, currentPage + 1)}
+                                    disabled={currentPage === totalPages}
+                                    aria-label="Next product page"
+                                >
+                                    <ChevronRight class="size-4" />
+                                </Button>
+                            </div>
+                        </div>
                     </div>
                 {/if}
 
@@ -673,10 +939,29 @@
                 </div>
             </div>
 
-            {#if form.category !== "retail"}
+            {#if availableCutTypes.length > 0}
                 <div class="space-y-2">
-                    <Label for="cut-type">Cut Type <span class="text-muted-foreground">(optional)</span></Label>
-                    <Input id="cut-type" placeholder="e.g. Belly, Ribs, Loin" bind:value={form.cut_type} />
+                    <Label for="cut-type">Cut Type</Label>
+                    <Select.Root type="single" value={cutTypeSelection} onValueChange={onCutTypeChange}>
+                        <Select.Trigger id="cut-type" class="h-10 w-full" aria-label="Cut type">
+                            <span data-slot="select-value">
+                                {cutTypeSelection || "Select a cut type"}
+                            </span>
+                        </Select.Trigger>
+                        <Select.Content>
+                            {#each availableCutTypes as cutType}
+                                <Select.Item value={cutType}>{cutType}</Select.Item>
+                            {/each}
+                        </Select.Content>
+                    </Select.Root>
+                    {#if cutTypeSelection === "Other"}
+                        <Input
+                            id="custom-cut-type"
+                            placeholder="Specify the cut type"
+                            bind:value={form.cut_type}
+                            aria-label="Custom cut type"
+                        />
+                    {/if}
                 </div>
             {/if}
 
@@ -735,7 +1020,10 @@
 
         <Dialog.Footer>
             <Button variant="outline" onclick={() => productDialogOpen = false}>Cancel</Button>
-            <Button onclick={saveProduct} disabled={!form.name || !form.price}>
+            <Button
+                onclick={saveProduct}
+                disabled={!form.name || !form.price || (availableCutTypes.length > 0 && !form.cut_type.trim())}
+            >
                 {isEditing ? "Save Changes" : "Add Product"}
             </Button>
         </Dialog.Footer>

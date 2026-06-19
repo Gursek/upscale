@@ -44,6 +44,8 @@ def _product_to_dict(p: Product) -> dict:
         "is_active": p.is_active,
         "is_archived": p.is_archived,
         "archived_at": to_business_iso(p.archived_at),
+        "created_at": to_business_iso(p.created_at),
+        "updated_at": to_business_iso(p.updated_at),
     }
 
 
@@ -148,7 +150,7 @@ def create_product():
         user_id=user_id,
         name=data["name"],
         category=validated["category"],
-        cut_type=data.get("cut_type"),
+        cut_type=validated.get("cut_type"),
         pricing_type=validated["pricing_type"],
         price=validated["price"],
         unit=validated.get("unit") or ("kg" if validated["category"] != "retail" else "pcs"),
@@ -184,7 +186,12 @@ def update_product(product_id):
         }), 400
 
     try:
-        validated = validate_product_payload(data, partial=True)
+        validated = validate_product_payload(
+            data,
+            partial=True,
+            current_category=product.category,
+            current_cut_type=product.cut_type,
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -193,6 +200,8 @@ def update_product(product_id):
                    "is_active"]:
         if field in data:
             setattr(product, field, validated[field] if field in validated else data[field])
+    if "cut_type" in validated:
+        product.cut_type = validated["cut_type"]
 
     product.updated_at = datetime.utcnow()
     db.session.flush()

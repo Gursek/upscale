@@ -1,10 +1,11 @@
 from decimal import Decimal, InvalidOperation
 
 
-ALLOWED_PRODUCT_CATEGORIES = {"beef", "pork", "chicken", "retail"}
+ALLOWED_PRODUCT_CATEGORIES = {"beef", "pork", "chicken", "fish", "veggies", "retail"}
 ALLOWED_PRICING_TYPES = {"per_kg", "fixed"}
 ALLOWED_TAX_CLASSIFICATIONS = {"exempt", "standard"}
 ALLOWED_PRODUCT_UNITS = {"kg", "pcs", "pack", "box", "bottle", "sachet"}
+MEAT_CATEGORIES = {"beef", "pork", "chicken"}
 
 
 def _decimal_field(data, field, *, required=False, positive=False, non_negative=False, integer=False):
@@ -29,7 +30,13 @@ def _decimal_field(data, field, *, required=False, positive=False, non_negative=
     return value
 
 
-def validate_product_payload(data, *, partial=False):
+def validate_product_payload(
+    data,
+    *,
+    partial=False,
+    current_category=None,
+    current_cut_type=None,
+):
     data = dict(data or {})
     validated = {}
 
@@ -40,7 +47,7 @@ def validate_product_payload(data, *, partial=False):
 
     if "category" in data:
         if data["category"] not in ALLOWED_PRODUCT_CATEGORIES:
-            raise ValueError("category: must be one of beef, pork, chicken, retail")
+            raise ValueError("category: must be one of beef, pork, chicken, fish, veggies, retail")
         validated["category"] = data["category"]
 
     if "pricing_type" in data:
@@ -57,6 +64,15 @@ def validate_product_payload(data, *, partial=False):
         if data["unit"] not in ALLOWED_PRODUCT_UNITS:
             raise ValueError("unit: must be one of kg, pcs, pack, box, bottle, sachet")
         validated["unit"] = data["unit"]
+
+    effective_category = data.get("category", current_category)
+    effective_cut_type = data.get("cut_type", current_cut_type)
+    if effective_category in MEAT_CATEGORIES:
+        if not isinstance(effective_cut_type, str) or not effective_cut_type.strip():
+            raise ValueError("cut_type: is required for meat products")
+        validated["cut_type"] = effective_cut_type.strip()
+    elif effective_category == "retail":
+        validated["cut_type"] = None
 
     price = _decimal_field(data, "price", required=not partial, positive=True)
     if price is not None:

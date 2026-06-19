@@ -88,7 +88,7 @@
                 </div>
                 <div class="flex items-center gap-3 rounded-2xl border bg-background/80 p-4 shadow-sm">
                     <ShieldCheck class="size-5 text-primary" />
-                    <span class="font-medium">BIR-aware reports and audit records</span>
+                    <span class="font-medium">BIR-focused reports and audit records</span>
                 </div>
             </div>
         </section>

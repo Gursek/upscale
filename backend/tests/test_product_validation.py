@@ -41,6 +41,7 @@ def _valid_product(**overrides):
         "low_stock_threshold": "2",
         "unit": "kg",
         "tax_classification": "exempt",
+        "cut_type": "Sirloin",
     }
     payload.update(overrides)
     return payload
@@ -60,10 +61,80 @@ def test_valid_product_creates_successfully():
     assert product["low_stock_threshold"] == 2.0
     assert product["unit"] == "kg"
     assert product["tax_classification"] == "exempt"
+    assert product["cut_type"] == "Sirloin"
+
+
+def test_meat_product_requires_non_empty_cut_type():
+    app = _app()
+    client = app.test_client()
+    headers = _headers(client)
+
+    response = client.post("/api/products/", headers=headers, json=_valid_product(cut_type=""))
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "cut_type: is required for meat products"
+
+
+def test_custom_cut_type_is_stored_as_entered():
+    app = _app()
+    client = app.test_client()
+    headers = _headers(client)
+
+    product = _json(client.post("/api/products/", headers=headers, json=_valid_product(
+        cut_type="House Special Cut",
+    )), 201)
+    assert product["cut_type"] == "House Special Cut"
+
+
+def test_retail_product_has_no_cut_type():
+    app = _app()
+    client = app.test_client()
+    headers = _headers(client)
+
+    product = _json(client.post("/api/products/", headers=headers, json=_valid_product(
+        category="retail",
+        pricing_type="fixed",
+        unit="pcs",
+        tax_classification="standard",
+        cut_type="Should be cleared",
+    )), 201)
+    assert product["cut_type"] is None
+
+
+@pytest.mark.parametrize("category", ["fish", "veggies"])
+def test_weight_based_non_meat_categories_create_without_cut_type(category):
+    app = _app()
+    client = app.test_client()
+    headers = _headers(client)
+
+    product = _json(client.post("/api/products/", headers=headers, json=_valid_product(
+        category=category,
+        cut_type=None,
+    )), 201)
+    assert product["category"] == category
+    assert product["cut_type"] is None
+
+
+def test_changing_retail_product_to_meat_requires_cut_type():
+    app = _app()
+    client = app.test_client()
+    headers = _headers(client)
+    product = _json(client.post("/api/products/", headers=headers, json=_valid_product(
+        category="retail",
+        pricing_type="fixed",
+        unit="pcs",
+        tax_classification="standard",
+        cut_type=None,
+    )), 201)
+
+    response = client.put(f"/api/products/{product['id']}", headers=headers, json={
+        "category": "pork",
+    })
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "cut_type: is required for meat products"
 
 
 @pytest.mark.parametrize(("field", "value", "message"), [
-    ("category", "fish", "category:"),
+        ("category", "dairy", "category:"),
     ("pricing_type", "weighted", "pricing_type:"),
     ("tax_classification", "zero_rated", "tax_classification:"),
     ("price", "0", "price:"),
@@ -86,7 +157,7 @@ def test_invalid_product_create_fields_return_descriptive_400(field, value, mess
 
 
 @pytest.mark.parametrize(("field", "value", "message"), [
-    ("category", "fish", "category:"),
+        ("category", "dairy", "category:"),
     ("pricing_type", "weighted", "pricing_type:"),
     ("tax_classification", "zero_rated", "tax_classification:"),
     ("price", "0", "price:"),

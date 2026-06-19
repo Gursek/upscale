@@ -4,6 +4,7 @@
     import { auth } from "$lib/stores/auth";
     import { apiJson, revokeCurrentSession } from "$lib/api";
     import { Button } from "$lib/components/ui/button";
+    import ProductTour from "$lib/components/ProductTour.svelte";
     import * as Dialog from "$lib/components/ui/dialog";
     import {
         AlertTriangle, Beef, Carrot, Check, CloudOff, FileBarChart, Fish, LayoutDashboard,
@@ -33,22 +34,27 @@
         {
             title: "Start from the dashboard",
             body: "Your sales, recent transactions, low-stock alerts, and quick actions live here. Use it as your store's command center.",
+            target: "[data-tour='dashboard-summary']",
         },
         {
             title: "Use POS for fast selling",
             body: "Tap fixed-price products to add one instantly. Select per-kg items, read the weighing scale, then charge cash with a receipt preview.",
+            target: "[data-tour='open-pos']",
         },
         {
             title: "Keep inventory connected",
             body: "Stock is protected during checkout. Products cannot be sold beyond available quantity, and sales deduct stock automatically.",
+            target: "[data-tour='inventory']",
         },
         {
             title: "Review invoices and BIR reports",
             body: "Invoices, voids, X-readings, Z-readings, and exports are available from Invoices and Reports for daily operations and compliance.",
+            target: "[data-tour='reports']",
         },
         {
             title: "Finish your business setup",
             body: "Open Settings to complete BIR registration details, product categories, VAT status, and security options before real store use.",
+            target: "[data-tour='settings']",
         },
     ];
 
@@ -176,7 +182,7 @@
             <Button variant="ghost" size="icon" class="hover:bg-primary! hover:text-primary-foreground!" aria-label="Refresh dashboard" onclick={loadDashboard}>
                 <RefreshCw class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="hover:bg-primary! hover:text-primary-foreground!" aria-label="Settings" onclick={() => goto("/settings")}>
+            <Button data-tour="settings" variant="ghost" size="icon" class="hover:bg-primary! hover:text-primary-foreground!" aria-label="Settings" onclick={() => goto("/settings")}>
                 <Settings class="size-4" />
             </Button>
             <Button variant="ghost" size="icon" class="hover:bg-primary! hover:text-primary-foreground!" aria-label="Log out" onclick={logout}>
@@ -195,7 +201,7 @@
                 <Loader2 class="size-6 animate-spin text-muted-foreground" />
             </div>
         {:else if dashboard}
-            <section class="grid grid-cols-2 lg:grid-cols-4 gap-3" aria-label="Today's summary">
+            <section data-tour="dashboard-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-3" aria-label="Today's summary">
                 <div class="bg-background rounded-xl border p-4">
                     <PhilippinePeso class="size-5 text-primary mb-3" />
                     <p class="text-xs text-muted-foreground">Today's sales</p>
@@ -219,11 +225,11 @@
             </section>
 
             <nav class="grid grid-cols-2 md:grid-cols-5 gap-3" aria-label="Quick access">
-                <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/pos")}><ShoppingCart class="size-5" /> Open POS</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/inventory")}><Package class="size-5" /> Inventory</Button>
+                <Button data-tour="open-pos" variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/pos")}><ShoppingCart class="size-5" /> Open POS</Button>
+                <Button data-tour="inventory" variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/inventory")}><Package class="size-5" /> Inventory</Button>
                 <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/invoices")}><ReceiptText class="size-5" /> Invoices</Button>
                 <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/suppliers")}><Truck class="size-5" /> Suppliers</Button>
-                <Button variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/reports")}><FileBarChart class="size-5" /> Reports</Button>
+                <Button data-tour="reports" variant="outline" class="h-16 gap-2 hover:bg-primary! hover:text-primary-foreground! active:translate-y-0" onclick={() => goto("/reports")}><FileBarChart class="size-5" /> Reports</Button>
             </nav>
 
             <div class="grid lg:grid-cols-2 gap-4">
@@ -362,35 +368,11 @@
     </Dialog.Content>
 </Dialog.Root>
 
-<Dialog.Root bind:open={tutorialOpen}>
-    <Dialog.Content class="max-w-lg" showCloseButton={false}>
-        <Dialog.Header>
-            <Dialog.Title>{tutorialSteps[tutorialStep].title}</Dialog.Title>
-            <Dialog.Description>{tutorialSteps[tutorialStep].body}</Dialog.Description>
-        </Dialog.Header>
-
-        <div class="rounded-2xl border bg-primary/5 p-4">
-            <div class="mb-3 flex items-center justify-between text-xs text-muted-foreground">
-                <span>Step {tutorialStep + 1} of {tutorialSteps.length}</span>
-                <span>UpScale quick tour</span>
-            </div>
-            <div class="grid grid-cols-5 gap-1" aria-hidden="true">
-                {#each tutorialSteps as _, index}
-                    <div class="h-1.5 rounded-full {index <= tutorialStep ? 'bg-primary' : 'bg-muted'}"></div>
-                {/each}
-            </div>
-        </div>
-
-        <Dialog.Footer>
-            <Button variant="outline" onclick={closeTutorial}>Skip tour</Button>
-            {#if tutorialStep > 0}
-                <Button variant="outline" onclick={() => tutorialStep -= 1}>Back</Button>
-            {/if}
-            {#if tutorialStep < tutorialSteps.length - 1}
-                <Button onclick={() => tutorialStep += 1}>Next</Button>
-            {:else}
-                <Button onclick={closeTutorial}>Start using UpScale</Button>
-            {/if}
-        </Dialog.Footer>
-    </Dialog.Content>
-</Dialog.Root>
+<ProductTour
+    open={tutorialOpen}
+    step={tutorialStep}
+    steps={tutorialSteps}
+    onNext={() => tutorialStep += 1}
+    onBack={() => tutorialStep -= 1}
+    onClose={closeTutorial}
+/>

@@ -22,6 +22,39 @@ unsynced, pushes them to Supabase when connectivity returns, verifies the remote
 write, then marks the local record as synced. Add conflict handling, retry
 backoff, and visible sync status before exposing any sync count to users.
 
+## Raspberry Pi Scale Transfer
+
+The working HX711/load-cell service remains on the Raspberry Pi. The transfer
+bridge at `backend/scripts/scale_push_bridge.py` polls that existing local
+service and sends stable readings to the hosted backend through an authenticated
+outbound HTTPS request.
+
+Set these backend variables on Render:
+
+```env
+SCALE_INGEST_API_KEY=<long-random-device-secret>
+SCALE_INGEST_USER_ID=<owner-user-id>
+SCALE_MAX_AGE_SECONDS=10
+SCALE_MAX_INGEST_AGE_SECONDS=60
+SCALE_MAX_WEIGHT_KG=300
+```
+
+Set these variables on the Raspberry Pi:
+
+```env
+PI_SCALE_READ_URL=http://127.0.0.1:5001/read
+UPSCALE_SCALE_INGEST_URL=https://your-api-domain.onrender.com/api/scale/readings
+SCALE_INGEST_API_KEY=<same-device-secret>
+SCALE_USER_ID=<owner-user-id>
+SCALE_DEVICE_ID=pi-vda-01
+SCALE_PUSH_INTERVAL_SECONDS=1
+SCALE_TRANSFER_TIMEOUT_SECONDS=3
+```
+
+Run the bridge under `systemd` or another process supervisor. The POS accepts
+only the latest reading within `SCALE_MAX_AGE_SECONDS`; older readings return a
+stale-reading error instead of being applied to a sale.
+
 ## Supabase
 
 1. Create a Supabase project.

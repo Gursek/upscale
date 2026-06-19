@@ -9,6 +9,7 @@ from models.db import db
 from models.invoice import Invoice
 from models.product import Product
 from models.user import User
+from services.business_time import business_today
 
 
 def _app():
@@ -166,7 +167,6 @@ def test_void_restores_stock_requires_reason_blocks_after_z_and_counts_in_z():
 
     product_after_z = _product(client, headers, name="Post Z Item", price="30.00", stock="5")
     old_invoice = _invoice(client, headers, product_after_z, quantity=1)
-    _set_invoice_time(app, old_invoice["id"], datetime(2026, 6, 16, 23, 30, 0))
 
     z_reading = _json(client.post("/api/readings/z", headers=headers, json={"password": "Strong1!"}), 201)
     assert z_reading["void_count"] == 1
@@ -190,16 +190,18 @@ def test_exports_use_manila_datetime_and_ejournal_contains_required_entry_types(
     wb = load_workbook(BytesIO(invoice_export.data))
     assert wb["Invoices and Voids"]["B5"].value == "07:30:00"
 
-    _json(client.post(f"/api/invoices/{invoice['id']}/void", headers=headers, json={
+    journal_invoice = _invoice(client, headers, product, quantity=1)
+    _json(client.post(f"/api/invoices/{journal_invoice['id']}/void", headers=headers, json={
         "reason": "Customer cancelled",
     }), 200)
-    _json(client.post("/api/readings/x", headers=headers, json={"date": "2026-06-17"}), 201)
+    journal_date = business_today().isoformat()
+    _json(client.post("/api/readings/x", headers=headers, json={"date": journal_date}), 201)
     _json(client.post("/api/readings/z", headers=headers, json={
         "password": "Strong1!",
-        "date": "2026-06-17",
+        "date": journal_date,
     }), 201)
 
-    ejournal = client.get("/api/readings/ejournal/export?date=2026-06-17", headers=headers)
+    ejournal = client.get(f"/api/readings/ejournal/export?date={journal_date}", headers=headers)
     assert ejournal.status_code == 200
     body = ejournal.data.decode("utf-8")
     assert "[INVOICE]" in body

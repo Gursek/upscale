@@ -122,7 +122,7 @@
                 </div>
                 <div class="rounded-2xl border bg-background/80 p-4 shadow-sm">
                     <Check class="mb-3 size-5 text-primary" />
-                    <p class="font-medium">BIR-aware</p>
+                    <p class="font-medium">BIR-Compliant</p>
                     <p class="mt-1 text-xs text-muted-foreground">Invoices, readings, and audit trail.</p>
                 </div>
             </div>

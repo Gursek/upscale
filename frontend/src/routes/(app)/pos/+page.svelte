@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
     import { tick } from "svelte";
     import { auth } from "$lib/stores/auth";
-    import { cart, cartTotal, cartCount } from "$lib/stores/cart";
+    import { cart, cartSummary } from "$lib/stores/cart";
     import { apiJson, apiFetch, API_BASE, revokeCurrentSession } from "$lib/api";
     import { goto } from "$app/navigation";
     import { Button } from "$lib/components/ui/button";
@@ -11,6 +11,7 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { subscribeQueueCount } from "$lib/offline-queue";
+    import * as Select from "$lib/components/ui/select";
     import * as Sheet from "$lib/components/ui/sheet";
     import * as Dialog from "$lib/components/ui/dialog";
     import {
@@ -38,7 +39,10 @@
     let voidLoading = $state(false);
     let voidReason = $state("");
     let showBuyerFields = $state(false);
-    let showDiscountFields = $state(false);
+    let discountDialogOpen = $state(false);
+    let discountError = $state("");
+    let discountDraftType = $state("");
+    let discountDraftIdNo = $state("");
     let lastInvoice = $state<any>(null);
     let lastCompletedInvoice = $state<any>(null);
     let cashTendered = $state("");
@@ -47,11 +51,9 @@
     let buyerAddress = $state("");
     let buyerBusinessStyle = $state("");
     let discountType = $state("");
-    let discountAmount = $state("0");
-    let discountBeneficiaryName = $state("");
-    let discountBeneficiaryTin = $state("");
     let discountIdNo = $state("");
     let weightInputElement = $state<HTMLInputElement | null>(null);
+    let weightInputActive = $state(false);
     let queuedInvoiceCount = $state(0);
 
     // --- Derived ---
@@ -78,10 +80,41 @@
         });
     });
 
-    let cartItems = $derived($cart);
-    let total = $derived($cartTotal);
-    let itemCount = $derived($cartCount);
-    let payableTotal = $derived(Math.max(0, total - (Number(discountAmount) || 0)));
+    let cartItems = $derived($cartSummary.items);
+    let total = $derived($cartSummary.total);
+    let itemCount = $derived($cartSummary.count);
+    const discountLabels: Record<string, string> = {
+        senior_citizen: "Senior Citizen",
+        pwd: "PWD",
+        naac: "National Athlete",
+        solo_parent: "Solo Parent",
+    };
+    let estimatedVatAmount = $derived.by(() => {
+        if (user?.vat_status !== "vat") return 0;
+        return cartItems.reduce((sum, item) => {
+            const product = products.find((candidate) => candidate.id === item.product_id);
+            if (product?.tax_classification !== "standard") return sum;
+            return sum + (item.line_total - item.line_total / 1.12);
+        }, 0);
+    });
+    let estimatedDiscountAmount = $derived.by(() => {
+        if (!discountType) return 0;
+        if (discountType === "senior_citizen" || discountType === "pwd") {
+            return Math.max(0, total - estimatedVatAmount) * 0.20;
+        }
+        if (discountType === "naac") return total * 0.20;
+        if (discountType === "solo_parent") return total * 0.10;
+        return 0;
+    });
+    let estimatedVatDeduction = $derived(
+        discountType === "senior_citizen" || discountType === "pwd"
+            ? estimatedVatAmount
+            : 0
+    );
+    let estimatedTotalDeduction = $derived(
+        Number((estimatedDiscountAmount + estimatedVatDeduction).toFixed(2))
+    );
+    let payableTotal = $derived(Math.max(0, total - estimatedTotalDeduction));
     let changeAmount = $derived(Math.max(0, (Number(cashTendered) || 0) - payableTotal));
     let quickCashAmounts = $derived.by(() => {
         const due = Math.ceil(payableTotal);
@@ -94,6 +127,12 @@
         const w = parseFloat(weightInput);
         if (isNaN(w) || w <= 0) return 0;
         return Number((selectedProduct.price * w).toFixed(2));
+    });
+
+    $effect(() => {
+        if (cartItems.length === 0 && discountType) {
+            removeDiscount();
+        }
     });
 
     // --- Load ---
@@ -139,8 +178,6 @@
                 setTimeout(() => error = "", 3000);
                 return;
             }
-            successMessage = `${product.name}: ${result.quantity} in cart`;
-            setTimeout(() => successMessage = "", 2000);
         } else {
             if (Number(product.stock_quantity) <= 0) {
                 error = `${product.name} is out of stock`;
@@ -161,6 +198,7 @@
     }
 
     function clearSelected() {
+        weightInputActive = false;
         selectedProduct = null;
         weightInput = "";
     }
@@ -170,7 +208,10 @@
         try {
             const res = await apiFetch("/scale/read");
             const data = await res.json();
-            if (data.weight_kg !== undefined) {
+            if (!res.ok) {
+                error = data.error || "Could not read scale";
+                setTimeout(() => error = "", 3000);
+            } else if (data.weight_kg !== undefined && Number(data.weight_kg) >= 0) {
                 const weight = Math.min(Number(data.weight_kg), Number(selectedProduct?.stock_quantity ?? 0));
                 weightInput = weight.toFixed(3);
             } else {
@@ -203,8 +244,36 @@
         if (cartItems.length === 0) return;
         cashTendered = payableTotal.toFixed(2);
         showBuyerFields = false;
-        showDiscountFields = false;
         checkoutDialogOpen = true;
+    }
+
+    function openDiscountDialog() {
+        discountDraftType = discountType;
+        discountDraftIdNo = discountIdNo;
+        discountError = "";
+        discountDialogOpen = true;
+    }
+
+    function applyDiscount() {
+        if (!discountDraftType) {
+            discountError = "Select a discount type";
+            return;
+        }
+        if (!discountDraftIdNo.trim()) {
+            discountError = "ID number is required";
+            return;
+        }
+        discountType = discountDraftType;
+        discountIdNo = discountDraftIdNo.trim();
+        discountDialogOpen = false;
+    }
+
+    function removeDiscount() {
+        discountType = "";
+        discountIdNo = "";
+        discountDraftType = "";
+        discountDraftIdNo = "";
+        discountError = "";
     }
 
     function resetOptionalCheckoutFields() {
@@ -212,13 +281,8 @@
         buyerTin = "";
         buyerAddress = "";
         buyerBusinessStyle = "";
-        discountType = "";
-        discountAmount = "0";
-        discountBeneficiaryName = "";
-        discountBeneficiaryTin = "";
-        discountIdNo = "";
+        removeDiscount();
         showBuyerFields = false;
-        showDiscountFields = false;
     }
 
     async function checkout() {
@@ -246,9 +310,6 @@
                     buyer_address: buyerAddress.trim() || null,
                     buyer_business_style: buyerBusinessStyle.trim() || null,
                     discount_type: discountType || null,
-                    discount_amount: Number(discountAmount) || 0,
-                    discount_beneficiary_name: discountBeneficiaryName.trim() || null,
-                    discount_beneficiary_tin: discountBeneficiaryTin.trim() || null,
                     discount_id_no: discountIdNo.trim() || null,
                 }),
             });
@@ -289,6 +350,7 @@
     function nextTransaction() {
         receiptDialogOpen = false;
         lastInvoice = null;
+        weightInputActive = false;
         selectedProduct = null;
         weightInput = "";
     }
@@ -366,12 +428,14 @@
 <div class="flex flex-col h-screen bg-[hsl(var(--background))]">
 
     <!-- Header -->
-    <header class="bg-card border-b border-border px-4 h-12 flex items-center justify-between shrink-0 shadow-sm">
-        <div class="flex items-center gap-2">
+    <header class="bg-card border-b border-border px-2 sm:px-4 min-h-14 flex items-center justify-between gap-2 shrink-0 shadow-sm">
+        <div class="flex min-w-0 items-center gap-2">
             <ShoppingBasket class="size-4 text-primary" />
-            <span class="font-semibold text-sm tracking-tight">{user?.business_name ?? "UpScale POS"}</span>
+            <span class="max-w-28 truncate text-sm font-semibold tracking-tight sm:max-w-48">
+                {user?.business_name ?? "UpScale POS"}
+            </span>
         </div>
-        <nav class="flex items-center" aria-label="Main navigation">
+        <nav class="flex min-w-0 items-center overflow-x-auto scrollbar-none" aria-label="Main navigation">
             {#if queuedInvoiceCount > 0}
                 <div
                     class="mr-2 flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-700"
@@ -382,36 +446,36 @@
                     <span>{queuedInvoiceCount}</span>
                 </div>
             {/if}
-            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Dashboard" onclick={() => goto("/dashboard")}>
+            <Button variant="ghost" size="icon" class="size-11 hover:bg-primary! hover:text-primary-foreground!" aria-label="Dashboard" onclick={() => goto("/dashboard")}>
                 <LayoutDashboard class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Inventory" onclick={() => goto("/inventory")}>
+            <Button variant="ghost" size="icon" class="size-11 hover:bg-primary! hover:text-primary-foreground!" aria-label="Inventory" onclick={() => goto("/inventory")}>
                 <Package class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Sales history" onclick={() => goto("/invoices")}>
+            <Button variant="ghost" size="icon" class="size-11 hover:bg-primary! hover:text-primary-foreground!" aria-label="Sales history" onclick={() => goto("/invoices")}>
                 <ReceiptText class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="BIR reports" onclick={() => goto("/reports")}>
+            <Button variant="ghost" size="icon" class="size-11 hover:bg-primary! hover:text-primary-foreground!" aria-label="BIR reports" onclick={() => goto("/reports")}>
                 <FileBarChart class="size-4" />
             </Button>
             <Button
                 variant="ghost"
                 size="icon"
-                class="size-8 hover:bg-destructive! hover:text-destructive-foreground!"
+                class="size-11 hover:bg-destructive! hover:text-destructive-foreground!"
                 aria-label="Void last transaction"
                 onclick={openVoidLastTransaction}
                 disabled={!lastCompletedInvoice || lastCompletedInvoice.status === "voided"}
             >
                 <Ban class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Suppliers" onclick={() => goto("/suppliers")}>
+            <Button variant="ghost" size="icon" class="size-11 hover:bg-primary! hover:text-primary-foreground!" aria-label="Suppliers" onclick={() => goto("/suppliers")}>
                 <Users class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Settings" onclick={() => goto("/settings")}>
+            <Button variant="ghost" size="icon" class="size-11 hover:bg-primary! hover:text-primary-foreground!" aria-label="Settings" onclick={() => goto("/settings")}>
                 <Settings class="size-4" />
             </Button>
             <div class="w-px h-4 bg-border mx-1"></div>
-            <Button variant="ghost" size="icon" class="size-8 hover:bg-primary! hover:text-primary-foreground!" aria-label="Log out" onclick={logout}>
+            <Button variant="ghost" size="icon" class="size-11 hover:bg-primary! hover:text-primary-foreground!" aria-label="Log out" onclick={logout}>
                 <LogOut class="size-4" />
             </Button>
         </nav>
@@ -436,15 +500,15 @@
         <div class="flex flex-col flex-1 overflow-hidden">
 
             <!-- Category tabs -->
-            <div class="bg-card border-b border-border px-3 shrink-0">
-                <div class="flex gap-0.5 overflow-x-auto py-2 scrollbar-none" role="tablist" aria-label="Product categories">
+            <div class="bg-card border-b border-border px-2 sm:px-3 shrink-0">
+                <div class="flex gap-2 overflow-x-auto py-2 scrollbar-none snap-x" role="tablist" aria-label="Product categories">
                     {#each categories() as cat}
                         <button
                             role="tab"
                             aria-selected={activeCategory === cat}
                             onclick={() => activeCategory = cat}
-                            class="px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
-                                focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0
+                            class="min-h-11 snap-start px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
+                                focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 touch-manipulation
                                 {activeCategory === cat
                                     ? 'bg-primary text-primary-foreground'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'}"
@@ -455,11 +519,11 @@
                 </div>
             </div>
 
-            <div class="bg-card border-b border-border px-3 py-2 shrink-0">
-                <div class="relative max-w-md">
+            <div class="bg-card border-b border-border px-2 py-2 sm:px-3 shrink-0">
+                <div class="relative w-full sm:max-w-md">
                     <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <Input
-                        class="h-10 pl-9"
+                        class="h-11 pl-9"
                         placeholder="Search products, cuts, or SKU"
                         bind:value={searchTerm}
                         aria-label="Search products"
@@ -468,7 +532,7 @@
             </div>
 
             <!-- Product grid -->
-            <div class="flex-1 overflow-y-auto p-3 pb-24 md:pb-3">
+            <div class="flex-1 overflow-y-auto p-2 sm:p-3 {selectedProduct ? 'pb-52 lg:pb-24' : 'pb-28 lg:pb-3'}">
                 {#if loadingProducts}
                     <div class="flex items-center justify-center h-full">
                         <Loader2 class="size-5 animate-spin text-muted-foreground" />
@@ -482,8 +546,7 @@
                         </Button>
                     </div>
                 {:else}
-                    <ul class="grid gap-2 sm:gap-3"
-                        style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr))"
+                    <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-5"
                         aria-label="Products">
                         {#each filteredProducts as product (product.id)}
                             <li>
@@ -492,9 +555,10 @@
                                     aria-label="{product.name}, ₱{product.price} per {product.unit}"
                                     aria-pressed={selectedProduct?.id === product.id}
                                     disabled={availableStock(product) <= 0}
-                                    class="w-full h-36 rounded-xl border-2 overflow-hidden text-left transition-all
+                                    class="w-full min-h-40 rounded-xl border-2 overflow-hidden text-left transition-all
                                         focus:outline-none focus-visible:ring-2 focus-visible:ring-ring relative
                                         disabled:opacity-50 disabled:cursor-not-allowed
+                                        touch-manipulation active:scale-[0.98]
                                         {selectedProduct?.id === product.id
                                             ? 'border-primary shadow-md'
                                             : 'border-border bg-card hover:border-primary/50 hover:shadow-sm'}"
@@ -553,12 +617,29 @@
 
             <!-- Weight input panel (shows when per-kg product selected) -->
             {#if selectedProduct}
-                <div class="bg-card border-t border-border p-3 shrink-0 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]"
+                {#if weightInputActive}
+                    <button
+                        type="button"
+                        class="fixed inset-0 z-40 cursor-default bg-black/10 backdrop-blur-[1px]"
+                        aria-label="Return weight input to bottom"
+                        onclick={() => {
+                            weightInputActive = false;
+                            weightInputElement?.blur();
+                        }}
+                    ></button>
+                {/if}
+                <div
+                    class="fixed left-0 right-0 z-[60] border-t border-border bg-card p-3
+                        transition-[bottom,box-shadow,border-radius] duration-300 ease-out
+                        lg:right-80
+                        {weightInputActive
+                            ? 'bottom-[max(6rem,calc(50dvh-7rem))] rounded-t-2xl shadow-2xl'
+                            : 'bottom-[5.25rem] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] lg:bottom-0'}"
                     aria-live="polite">
-                    <div class="flex items-center gap-3 max-w-2xl mx-auto">
+                    <div class="mx-auto flex max-w-2xl flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3">
 
                         <!-- Product info -->
-                        <div class="min-w-0 shrink-0">
+                        <div class="min-w-0 flex-1 sm:flex-none">
                             <p class="font-semibold text-sm leading-tight truncate max-w-35">
                                 {selectedProduct.name}
                             </p>
@@ -566,7 +647,7 @@
                         </div>
 
                         <!-- Weight input -->
-                        <div class="flex-1 flex items-center gap-2">
+                        <div class="order-3 flex w-full items-center gap-2 sm:order-none sm:w-auto sm:flex-1">
                             <div class="relative flex-1">
                                 <input
                                     bind:this={weightInputElement}
@@ -576,8 +657,10 @@
                                     step="0.001"
                                     placeholder="0.000 kg"
                                     bind:value={weightInput}
+                                    onfocus={() => weightInputActive = true}
+                                    onblur={() => weightInputActive = false}
                                     aria-label="Weight in kilograms"
-                                    class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm
+                                    class="h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-base
                                         font-mono focus:outline-none focus:ring-2 focus:ring-ring pr-16"
                                 />
                                 <span class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
@@ -588,6 +671,7 @@
                             <Button
                                 variant="outline"
                                 size="icon"
+                                class="size-11"
                                 onclick={() => adjustWeight(-1)}
                                 disabled={!weightInput || parseFloat(weightInput) <= 0}
                                 aria-label="Decrease quantity by one kilogram"
@@ -597,6 +681,7 @@
                             <Button
                                 variant="outline"
                                 size="icon"
+                                class="size-11"
                                 onclick={() => adjustWeight(1)}
                                 disabled={(parseFloat(weightInput) || 0) >= Number(selectedProduct.stock_quantity)}
                                 aria-label="Increase quantity by one kilogram"
@@ -611,19 +696,19 @@
                                 onclick={readScale}
                                 disabled={scaleLoading}
                                 aria-label="Read weight from scale"
-                                class="shrink-0 gap-1.5"
+                                class="h-11 shrink-0 gap-1.5 px-3"
                             >
                                 {#if scaleLoading}
                                     <Loader2 class="size-3.5 animate-spin" />
                                 {:else}
                                     <ScanLine class="size-3.5" />
                                 {/if}
-                                Read Scale
+                                <span class="hidden sm:inline">Read Scale</span>
                             </Button>
                         </div>
 
                         <!-- Price preview -->
-                        <div class="text-right shrink-0 min-w-20">
+                        <div class="shrink-0 text-right min-w-20">
                             <p class="text-xs text-muted-foreground">Total</p>
                             <p class="font-bold text-primary text-base">
                                 ₱{computedPrice().toFixed(2)}
@@ -634,7 +719,7 @@
                         <Button
                             onclick={addToCart}
                             disabled={!weightInput || parseFloat(weightInput) <= 0 || parseFloat(weightInput) > Number(selectedProduct.stock_quantity)}
-                            class="shrink-0"
+                            class="h-11 shrink-0 px-4"
                             aria-label="Add {selectedProduct.name} to cart"
                         >
                             <Plus class="size-4 mr-1" />
@@ -645,7 +730,7 @@
                         <button
                             onclick={clearSelected}
                             aria-label="Cancel selection"
-                            class="text-muted-foreground hover:text-foreground transition-colors p-1
+                            class="flex size-11 items-center justify-center text-muted-foreground hover:text-foreground transition-colors
                                 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
                         >
                             <X class="size-4" />
@@ -656,7 +741,7 @@
         </div>
 
         <!-- RIGHT: Cart (desktop) -->
-        <aside class="hidden md:flex flex-col w-80 bg-card border-l border-border" aria-label="Shopping cart">
+        <aside class="hidden lg:flex flex-col w-80 bg-card border-l border-border" aria-label="Shopping cart">
             <div class="px-4 py-3 border-b border-border flex items-center justify-between">
                 <h2 class="font-semibold text-sm flex items-center gap-1.5">
                     <ShoppingCart class="size-4" />
@@ -672,8 +757,8 @@
                     <button
                         onclick={() => cart.clear()}
                         aria-label="Clear cart"
-                        class="text-xs text-muted-foreground hover:text-destructive transition-colors
-                            focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded px-1">
+                        class="min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-destructive transition-colors
+                            focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         Clear
                     </button>
                 {/if}
@@ -704,7 +789,7 @@
                                         <Button
                                             variant="outline"
                                             size="icon"
-                                            class="size-6"
+                                            class="size-9"
                                             onclick={() => cart.setQuantity(item.product_id, item.quantity - 1)}
                                             aria-label="Decrease {item.name} quantity"
                                         ><Minus class="size-3" /></Button>
@@ -712,7 +797,7 @@
                                         <Button
                                             variant="outline"
                                             size="icon"
-                                            class="size-6"
+                                            class="size-9"
                                             onclick={() => cart.setQuantity(item.product_id, item.quantity + 1)}
                                             disabled={item.quantity >= item.stock_quantity}
                                             aria-label="Increase {item.name} quantity"
@@ -724,9 +809,9 @@
                                     <button
                                         onclick={() => cart.removeItem(item.product_id)}
                                         aria-label="Remove {item.name} from cart"
-                                        class="text-muted-foreground hover:text-destructive transition-colors
-                                            focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded p-0.5">
-                                        <X class="size-3" />
+                                        class="flex size-9 items-center justify-center text-muted-foreground hover:text-destructive transition-colors
+                                            focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded">
+                                        <X class="size-4" />
                                     </button>
                                 </div>
                             </li>
@@ -741,6 +826,45 @@
                     <span class="text-sm text-muted-foreground">Subtotal</span>
                     <span class="font-bold text-lg text-primary">₱{total.toFixed(2)}</span>
                 </div>
+                {#if discountType}
+                    <div class="rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-xs">
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <p class="font-medium text-primary">{discountLabels[discountType]}</p>
+                                <p class="text-muted-foreground">ID: {discountIdNo}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onclick={removeDiscount}
+                                aria-label="Remove applied discount"
+                                class="flex size-11 items-center justify-center rounded text-muted-foreground hover:bg-primary hover:text-primary-foreground"
+                            >
+                                <X class="size-3.5" />
+                            </button>
+                        </div>
+                        <div class="mt-2 flex justify-between font-medium">
+                            <span>Estimated deduction</span>
+                            <span>-₱{estimatedTotalDeduction.toFixed(2)}</span>
+                        </div>
+                    </div>
+                {:else}
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        class="h-8 w-full text-primary"
+                        onclick={openDiscountDialog}
+                        disabled={cartItems.length === 0}
+                    >
+                        Apply Discount
+                    </Button>
+                {/if}
+                {#if discountType}
+                    <div class="flex justify-between text-sm font-semibold">
+                        <span>Amount due</span>
+                        <span class="text-primary">₱{payableTotal.toFixed(2)}</span>
+                    </div>
+                {/if}
                 <Button
                     class="w-full h-11 text-sm font-semibold"
                     onclick={beginCheckout}
@@ -751,7 +875,7 @@
                         <Loader2 class="size-4 animate-spin mr-2" />
                         Processing...
                     {:else}
-                        Charge ₱{total.toFixed(2)}
+                        Charge ₱{payableTotal.toFixed(2)}
                     {/if}
                 </Button>
             </div>
@@ -759,34 +883,48 @@
     </div>
 
     <!-- Mobile: bottom cart action bar -->
-    <div class="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 p-3 shadow-lg backdrop-blur">
+    <div class="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
         <Sheet.Root bind:open={cartOpen}>
-            <div class="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+            <div class="grid grid-cols-[1fr_auto] items-center gap-2">
                 <Sheet.Trigger>
-                    <Button variant="outline" class="h-12 gap-2" aria-label="Open cart, {itemCount} items">
-                        <ShoppingCart class="size-4" />
-                        {itemCount}
+                    <Button variant="outline" class="h-14 w-full justify-start gap-3 px-3" aria-label="Open cart, {itemCount} items, total ₱{payableTotal.toFixed(2)}">
+                        <span class="relative">
+                            <ShoppingCart class="size-5" />
+                            {#if itemCount > 0}
+                                <span class="absolute -right-2 -top-2 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                                    {itemCount}
+                                </span>
+                            {/if}
+                        </span>
+                        <span class="min-w-0 text-left">
+                            <span class="block text-[10px] text-muted-foreground">View cart</span>
+                            <span class="block truncate text-base font-bold text-primary">₱{payableTotal.toFixed(2)}</span>
+                        </span>
                     </Button>
                 </Sheet.Trigger>
-                <div>
-                    <p class="text-[11px] text-muted-foreground">Total</p>
-                    <p class="text-lg font-bold text-primary">₱{total.toFixed(2)}</p>
-                </div>
-                <Button class="h-12 px-4" onclick={beginCheckout} disabled={cartItems.length === 0 || checkoutLoading}>
+                <Button class="h-14 px-5" onclick={beginCheckout} disabled={cartItems.length === 0 || checkoutLoading}>
                     Charge
                 </Button>
             </div>
-            <Sheet.Content side="bottom" class="h-[75vh] rounded-t-2xl">
+            <Sheet.Content side="bottom" showCloseButton={false} class="h-[82dvh] max-h-[52rem] rounded-t-2xl px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
                 <Sheet.Header>
                     <Sheet.Title class="flex items-center gap-2 text-sm">
                         <ShoppingCart class="size-4" />
                         Cart ({itemCount})
-                        {#if cartItems.length > 0}
-                            <button onclick={() => cart.clear()}
-                                class="ml-auto text-xs text-muted-foreground hover:text-destructive">
-                                Clear
-                            </button>
-                        {/if}
+                        <span class="ml-auto flex items-center gap-1">
+                            {#if cartItems.length > 0}
+                                <button onclick={() => cart.clear()}
+                                    class="min-h-11 rounded px-2 text-xs text-muted-foreground hover:bg-muted hover:text-destructive">
+                                    Clear
+                                </button>
+                            {/if}
+                            <Sheet.Close
+                                class="flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                                aria-label="Close cart"
+                            >
+                                <X class="size-5" />
+                            </Sheet.Close>
+                        </span>
                     </Sheet.Title>
                 </Sheet.Header>
                 <div class="flex-1 overflow-y-auto py-3">
@@ -807,20 +945,23 @@
                                     </div>
                                     <div class="flex items-center gap-2 shrink-0">
                                         {#if item.pricing_type === "fixed"}
-                                            <Button variant="outline" size="icon" class="size-7" onclick={() => cart.setQuantity(item.product_id, item.quantity - 1)} aria-label="Decrease {item.name}">
-                                                <Minus class="size-3" />
+                                            <Button variant="outline" size="icon" class="size-11" onclick={() => cart.setQuantity(item.product_id, item.quantity - 1)} aria-label="Decrease {item.name}">
+                                                <Minus class="size-4" />
                                             </Button>
                                             <span class="text-xs">{item.quantity}</span>
-                                            <Button variant="outline" size="icon" class="size-7" onclick={() => cart.setQuantity(item.product_id, item.quantity + 1)} disabled={item.quantity >= item.stock_quantity} aria-label="Increase {item.name}">
-                                                <Plus class="size-3" />
+                                            <Button variant="outline" size="icon" class="size-11" onclick={() => cart.setQuantity(item.product_id, item.quantity + 1)} disabled={item.quantity >= item.stock_quantity} aria-label="Increase {item.name}">
+                                                <Plus class="size-4" />
                                             </Button>
                                         {/if}
                                         <span class="font-semibold text-sm text-primary">
                                             ₱{item.line_total.toFixed(2)}
                                         </span>
-                                        <button onclick={() => cart.removeItem(item.product_id)}
-                                            aria-label="Remove {item.name}">
-                                            <X class="size-4 text-muted-foreground hover:text-destructive" />
+                                        <button
+                                            onclick={() => cart.removeItem(item.product_id)}
+                                            aria-label="Remove {item.name}"
+                                            class="flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive"
+                                        >
+                                            <X class="size-4" />
                                         </button>
                                     </div>
                                 </li>
@@ -830,15 +971,51 @@
                 </div>
                 <div class="pt-3 border-t space-y-3">
                     <div class="flex justify-between font-bold">
-                        <span>Total</span>
+                        <span>Subtotal</span>
                         <span class="text-primary">₱{total.toFixed(2)}</span>
                     </div>
+                    {#if discountType}
+                        <div class="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs">
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <p class="font-medium text-primary">{discountLabels[discountType]}</p>
+                                    <p class="text-muted-foreground">ID: {discountIdNo}</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onclick={removeDiscount}
+                                    aria-label="Remove applied discount"
+                                    class="flex size-11 items-center justify-center rounded text-muted-foreground hover:bg-primary hover:text-primary-foreground"
+                                >
+                                    <X class="size-3.5" />
+                                </button>
+                            </div>
+                            <div class="mt-2 flex justify-between font-medium">
+                                <span>Estimated deduction</span>
+                                <span>-₱{estimatedTotalDeduction.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div class="flex justify-between font-bold">
+                            <span>Amount due</span>
+                            <span class="text-primary">₱{payableTotal.toFixed(2)}</span>
+                        </div>
+                    {:else}
+                        <Button
+                            type="button"
+                            variant="outline"
+                            class="w-full"
+                            onclick={openDiscountDialog}
+                            disabled={cartItems.length === 0}
+                        >
+                            Apply Discount
+                        </Button>
+                    {/if}
                     <Button class="w-full h-11" onclick={beginCheckout}
                         disabled={cartItems.length === 0 || checkoutLoading}>
                         {#if checkoutLoading}
                             <Loader2 class="size-4 animate-spin mr-2" />
                         {/if}
-                        Charge ₱{total.toFixed(2)}
+                        Charge ₱{payableTotal.toFixed(2)}
                     </Button>
                 </div>
             </Sheet.Content>
@@ -846,11 +1023,79 @@
     </div>
 </div>
 
+<Dialog.Root bind:open={discountDialogOpen}>
+    <Dialog.Content class="max-w-sm">
+        <Dialog.Header>
+            <Dialog.Title>Apply Discount</Dialog.Title>
+            <Dialog.Description>
+                Select the verified statutory discount and enter the customer ID before charging.
+            </Dialog.Description>
+        </Dialog.Header>
+
+        <div class="space-y-4">
+            {#if discountError}
+                <div class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+                    {discountError}
+                </div>
+            {/if}
+
+            <div class="space-y-2">
+                <Label for="discount-type">Discount type</Label>
+                <Select.Root type="single" bind:value={discountDraftType}>
+                    <Select.Trigger id="discount-type" class="h-11 w-full" aria-label="Discount type">
+                        <span data-slot="select-value">
+                            {discountDraftType ? discountLabels[discountDraftType] : "Select discount type"}
+                        </span>
+                    </Select.Trigger>
+                    <Select.Content>
+                        <Select.Item value="senior_citizen">Senior Citizen (SC)</Select.Item>
+                        <Select.Item value="pwd">Person with Disability (PWD)</Select.Item>
+                        <Select.Item value="naac">National Athlete (NAAC)</Select.Item>
+                        <Select.Item value="solo_parent">Solo Parent</Select.Item>
+                    </Select.Content>
+                </Select.Root>
+            </div>
+
+            <div class="space-y-2">
+                <Label for="precharge-discount-id">ID number</Label>
+                <Input
+                    id="precharge-discount-id"
+                    class="h-11"
+                    placeholder="Enter the card or ID number"
+                    bind:value={discountDraftIdNo}
+                    autocomplete="off"
+                />
+            </div>
+
+            {#if discountDraftType}
+                <div class="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                    Estimated deduction: <span class="font-semibold text-foreground">₱{(
+                        discountDraftType === "senior_citizen" || discountDraftType === "pwd"
+                            ? Math.max(0, total - estimatedVatAmount) * 0.20 +
+                                estimatedVatAmount
+                            : discountDraftType === "naac"
+                                ? total * 0.20
+                                : total * 0.10
+                    ).toFixed(2)}</span>
+                    <span class="mt-1 block">The server verifies the final amount when the sale is completed.</span>
+                </div>
+            {/if}
+        </div>
+
+        <Dialog.Footer>
+            <Button variant="outline" onclick={() => discountDialogOpen = false}>Cancel</Button>
+            <Button onclick={applyDiscount} disabled={!discountDraftType || !discountDraftIdNo.trim()}>
+                Apply Discount
+            </Button>
+        </Dialog.Footer>
+    </Dialog.Content>
+</Dialog.Root>
+
 <Dialog.Root bind:open={checkoutDialogOpen}>
     <Dialog.Content class="max-w-lg max-h-[90vh] overflow-y-auto">
         <Dialog.Header>
             <Dialog.Title>Cash Payment</Dialog.Title>
-            <Dialog.Description>Fast checkout for cash sales. Add buyer or statutory discount details only when needed.</Dialog.Description>
+            <Dialog.Description>Confirm cash received and complete the sale. Discounts must be applied from the cart before charging.</Dialog.Description>
         </Dialog.Header>
 
         <div class="space-y-4">
@@ -878,12 +1123,9 @@
                 {/each}
             </div>
 
-            <div class="grid grid-cols-2 gap-2">
+            <div>
                 <Button type="button" variant={showBuyerFields ? "default" : "outline"} onclick={() => showBuyerFields = !showBuyerFields}>
                     Buyer Info
-                </Button>
-                <Button type="button" variant={showDiscountFields ? "default" : "outline"} onclick={() => showDiscountFields = !showDiscountFields}>
-                    Discount
                 </Button>
             </div>
 
@@ -915,53 +1157,6 @@
                 </div>
             {/if}
 
-            {#if showDiscountFields}
-                <Separator />
-                <div class="space-y-3">
-                    <div>
-                        <p class="text-sm font-medium">Statutory discount</p>
-                        <p class="text-xs text-muted-foreground">Choose a verified discount and record the required ID details.</p>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                        {#each [
-                            ["senior_citizen", "Senior"],
-                            ["pwd", "PWD"],
-                            ["naac", "Athlete/Coach"],
-                            ["solo_parent", "Solo Parent"],
-                        ] as option}
-                            <Button
-                                type="button"
-                                variant={discountType === option[0] ? "default" : "outline"}
-                                onclick={() => discountType = discountType === option[0] ? "" : option[0]}
-                                aria-pressed={discountType === option[0]}
-                            >
-                                {option[1]}
-                            </Button>
-                        {/each}
-                    </div>
-                    <div class="space-y-2">
-                        <Label for="discount-amount">Discount amount</Label>
-                        <Input id="discount-amount" type="number" min="0" max={total} step="0.01"
-                            bind:value={discountAmount} disabled={!discountType} />
-                    </div>
-                    {#if discountType}
-                        <div class="grid sm:grid-cols-2 gap-3">
-                            <div class="space-y-2">
-                                <Label for="beneficiary-name">Beneficiary name</Label>
-                                <Input id="beneficiary-name" bind:value={discountBeneficiaryName} />
-                            </div>
-                            <div class="space-y-2">
-                                <Label for="discount-id">ID number</Label>
-                                <Input id="discount-id" bind:value={discountIdNo} />
-                            </div>
-                        </div>
-                        <div class="space-y-2">
-                            <Label for="beneficiary-tin">Beneficiary TIN, if any</Label>
-                            <Input id="beneficiary-tin" bind:value={discountBeneficiaryTin} />
-                        </div>
-                    {/if}
-                </div>
-            {/if}
         </div>
 
         <Dialog.Footer>
@@ -969,7 +1164,7 @@
             <Button
                 onclick={checkout}
                 disabled={checkoutLoading || (Number(cashTendered) || 0) < payableTotal ||
-                    (!!discountType && (!discountBeneficiaryName.trim() || !discountIdNo.trim()))}
+                    (!!discountType && !discountIdNo.trim())}
                 aria-busy={checkoutLoading}
             >
                 {#if checkoutLoading}<Loader2 class="size-4 animate-spin mr-2" />{/if}

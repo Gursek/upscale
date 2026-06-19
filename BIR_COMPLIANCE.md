@@ -58,8 +58,8 @@ alone do not grant BIR accreditation or a Permit to Use.
   without determining whether reaccreditation is required.
 - Product images currently use local Flask storage. Move them to Supabase
   Storage before deploying on an ephemeral host.
-- The physical scale requires a local bridge or browser hardware integration;
-  a cloud server cannot directly access a store computer's serial port.
+- The physical scale uses an outbound Raspberry Pi transfer bridge. The hosted
+  backend accepts only authenticated, stable, and recent readings.
 
 ## Important Tax Limitation
 

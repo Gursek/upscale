@@ -110,3 +110,9 @@ export const cartTotal = derived(cart, ($cart) =>
 export const cartCount = derived(cart, ($cart) =>
     $cart.reduce((sum, item) => sum + item.quantity, 0)
 );
+
+export const cartSummary = derived(cart, ($cart) => ({
+    items: $cart,
+    total: Number($cart.reduce((sum, item) => sum + item.line_total, 0).toFixed(2)),
+    count: $cart.reduce((sum, item) => sum + item.quantity, 0),
+}));

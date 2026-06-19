@@ -1,0 +1,664 @@
+{
+  "source": "Upscale_Chapters_1-3_Revised.docx",
+  "paragraph_count": 144,
+  "table_count": 0,
+  "section_count": 1,
+  "paragraphs": [
+    {
+      "index": 2,
+      "style": "normal",
+      "text": "Upscale: An Integrated Weighing Scale, Point-of-Sale, and Inventory Management System"
+    },
+    {
+      "index": 4,
+      "style": "normal",
+      "text": "A Capstone Project"
+    },
+    {
+      "index": 5,
+      "style": "normal",
+      "text": "Presented to the College of"
+    },
+    {
+      "index": 6,
+      "style": "normal",
+      "text": "Information Technology, Engineering, and Criminology at"
+    },
+    {
+      "index": 7,
+      "style": "normal",
+      "text": "Asia Pacific College of Advanced Studies, Inc."
+    },
+    {
+      "index": 9,
+      "style": "normal",
+      "text": "In partial Fulfillment of the Requirements for the"
+    },
+    {
+      "index": 10,
+      "style": "normal",
+      "text": "Degree of Bachelor of"
+    },
+    {
+      "index": 11,
+      "style": "normal",
+      "text": "Science in Information Technology"
+    },
+    {
+      "index": 13,
+      "style": "normal",
+      "text": "By:"
+    },
+    {
+      "index": 15,
+      "style": "normal",
+      "text": "Gill, Gursewak Singh G."
+    },
+    {
+      "index": 16,
+      "style": "normal",
+      "text": "Manaloto, Kerby D."
+    },
+    {
+      "index": 20,
+      "style": "normal",
+      "text": "June, 2026"
+    },
+    {
+      "index": 22,
+      "style": "normal",
+      "text": "CHAPTER I"
+    },
+    {
+      "index": 23,
+      "style": "normal",
+      "text": "Background of the Study"
+    },
+    {
+      "index": 24,
+      "style": "normal",
+      "text": "Small retail businesses in the Philippines often perform sales, stock monitoring, and recordkeeping through separate manual procedures. This condition is particularly relevant to weight-based retailers, where employees must obtain a weight, multiply it by a unit price, record the sale, and adjust inventory. Repeated manual entry increases the opportunity for transcription, computation, and reconciliation errors. Fauzi and Sheng (2020) examined the digitalization of micro, small, and medium-sized enterprises (MSMEs) and emphasized that technology adoption is shaped by the organizational and institutional conditions surrounding the enterprise."
+    },
+    {
+      "index": 25,
+      "style": "normal",
+      "text": "Inventory control presents a related operational problem. Businesses that lack a structured stock ledger may discover shortages only when an item is needed or may hold excess perishable stock that cannot be sold on time. Gaborno et al. (2025) found that micro-business owners in Buenavista, Guimaras generally practiced inventory management, but gaps remained in the use of systematic tracking tools and technology-driven systems. Their findings support the need for a transaction-linked inventory process that records stock movement as sales and adjustments occur."
+    },
+    {
+      "index": 26,
+      "style": "normal",
+      "text": "A point-of-sale (POS) system can combine transaction processing, sales records, and inventory updates within one workflow. Natividad et al. (2024) specifically examined the acceptance of a cloud-based POS system for inventory management among micro food businesses. Tronqued (2026) likewise reported that start-up cafes used POS systems most often for order taking, billing, and receipt generation, while advanced inventory and analytics features remained underused. These studies indicate that a system for a small retailer should prioritize reliable core functions, understandable interfaces, and manageable operating requirements."
+    },
+    {
+      "index": 27,
+      "style": "normal",
+      "text": "VDA Consumer Goods Trading in Bagac, Bataan provides the operational setting for the present study. The business handles products sold by weight and requires a faster method for computing totals, monitoring stock, and retrieving transaction records. A unified system is appropriate because the quantity sold in a transaction is also the quantity that must be deducted from inventory. Keeping these functions in separate manual records creates duplicated work and makes discrepancies difficult to trace."
+    },
+    {
+      "index": 28,
+      "style": "normal",
+      "text": "The implemented Upscale system uses a browser-based architecture rather than a single application hosted entirely on a Raspberry Pi. Its frontend is a SvelteKit progressive web application written in TypeScript, while a Flask application provides the secured REST application programming interface (API). The production design uses PostgreSQL through Supabase for persistent data, Supabase Storage for product images, Vercel for the static frontend, and Render for the backend service. SQLite remains available for local development."
+    },
+    {
+      "index": 29,
+      "style": "normal",
+      "text": "Upscale supports products priced by weight and products sold at a fixed quantity. For weighted products, the cashier may enter the measured quantity or request a reading through the system's scale endpoint. The current endpoint forwards the request to a service on the same machine as the Flask backend. This arrangement can support a local deployment, but it cannot reach a weighing device attached to a store computer when the backend is hosted on Render. The hardware-specific service, device driver, and secure store-to-cloud communication method are not part of the current implementation."
+    },
+    {
+      "index": 30,
+      "style": "normal",
+      "text": "The study therefore develops Upscale as an integrated POS, inventory, invoicing, reporting, and compliance-support system for VDA Consumer Goods Trading. The system records cash sales, deducts stock after a successful transaction, restores stock after an authorized void, maintains supplier and product records, displays low-stock items, and generates invoices, X-Readings, Z-Readings, an electronic journal, statutory discount books, and an activity log. These controls are intended to improve operational accuracy and traceability. They do not, by themselves, constitute Bureau of Internal Revenue (BIR) accreditation or a Permit to Use."
+    },
+    {
+      "index": 31,
+      "style": "normal",
+      "text": "Statement of the Problem"
+    },
+    {
+      "index": 32,
+      "style": "normal",
+      "text": "This study addresses the need to develop an integrated weighing-scale interface, point-of-sale, inventory, invoicing, and reporting system for VDA Consumer Goods Trading."
+    },
+    {
+      "index": 33,
+      "style": "normal",
+      "text": "Specifically, this study seeks to answer the following research questions:"
+    },
+    {
+      "index": 34,
+      "style": "normal",
+      "text": "How can Upscale reduce repeated manual entry when processing products sold by weight?"
+    },
+    {
+      "index": 35,
+      "style": "normal",
+      "text": "How can the system maintain accurate product quantities through sales, restocking, adjustments, and voided transactions?"
+    },
+    {
+      "index": 36,
+      "style": "normal",
+      "text": "How can Upscale organize invoices, sales records, readings, and audit events for timely retrieval and review?"
+    },
+    {
+      "index": 37,
+      "style": "normal",
+      "text": "How can role-based access control protect sensitive inventory, reporting, and configuration functions?"
+    },
+    {
+      "index": 38,
+      "style": "normal",
+      "text": "How can the system support the invoice and reporting information required for BIR registration while clearly identifying functions that still require external approval and operational validation?"
+    },
+    {
+      "index": 39,
+      "style": "normal",
+      "text": "General Objective"
+    },
+    {
+      "index": 40,
+      "style": "normal",
+      "text": "The general objective of this study is to design and develop Upscale, a web-based point-of-sale and inventory management system that supports weighted-product sales, structured recordkeeping, operational reporting, and accountable retail transactions for VDA Consumer Goods Trading in Bagac, Bataan."
+    },
+    {
+      "index": 41,
+      "style": "normal",
+      "text": "Specific Objectives"
+    },
+    {
+      "index": 42,
+      "style": "normal",
+      "text": "To develop a POS workflow that processes weighted and fixed-price products, computes cash transactions, and records sequential invoices."
+    },
+    {
+      "index": 43,
+      "style": "normal",
+      "text": "To develop an inventory module that records sales deductions, restocking, stock adjustments, void restorations, supplier information, and low-stock thresholds."
+    },
+    {
+      "index": 44,
+      "style": "normal",
+      "text": "To implement a centralized database for products, users, suppliers, invoices, readings, electronic-journal entries, and audit events."
+    },
+    {
+      "index": 45,
+      "style": "normal",
+      "text": "To implement role-based access for owners, managers, cashiers, and auditors, together with authenticated sessions and traceable system actions."
+    },
+    {
+      "index": 46,
+      "style": "normal",
+      "text": "To generate invoices and business reports, including X-Readings, Z-Readings, invoice registers, statutory discount books, an electronic journal, and a hash-linked activity log."
+    },
+    {
+      "index": 47,
+      "style": "normal",
+      "text": "Definition of Terms"
+    },
+    {
+      "index": 48,
+      "style": "normal",
+      "text": "The following terms are defined conceptually and operationally:"
+    },
+    {
+      "index": 49,
+      "style": "normal",
+      "text": "Application Programming Interface (API). A defined interface that allows software components to exchange requests and responses."
+    },
+    {
+      "index": 50,
+      "style": "normal",
+      "text": "In this study, the API refers to the Flask endpoints used by the SvelteKit frontend to access authentication, products, inventory, invoices, readings, reports, and scale requests."
+    },
+    {
+      "index": 51,
+      "style": "normal",
+      "text": "BIR Compliance Support. System functions that capture, preserve, and report information relevant to BIR registration and operational requirements."
+    },
+    {
+      "index": 52,
+      "style": "normal",
+      "text": "In this study, the term refers to invoice sequencing, seller and machine metadata, X- and Z-Readings, an electronic journal, reprint and void tracking, statutory discount records, and an activity log. It does not mean that the system is already accredited."
+    },
+    {
+      "index": 53,
+      "style": "normal",
+      "text": "Database. An organized collection of structured data that software can store, query, and update."
+    },
+    {
+      "index": 54,
+      "style": "normal",
+      "text": "In this study, the term refers to the SQLAlchemy-managed database, using SQLite during local development and PostgreSQL through Supabase in the production design."
+    },
+    {
+      "index": 55,
+      "style": "normal",
+      "text": "Scale Bridge. A device-facing service that communicates with the physical weighing device and returns a weight value to the main application."
+    },
+    {
+      "index": 56,
+      "style": "normal",
+      "text": "In this study, the term refers to the separate service expected by the Flask scale endpoint. The repository provides the proxy interface but not the hardware-specific implementation or a secure method for connecting store-local hardware to the hosted backend."
+    },
+    {
+      "index": 57,
+      "style": "normal",
+      "text": "Inventory Management. The process of recording and controlling stock additions, deductions, adjustments, and availability."
+    },
+    {
+      "index": 58,
+      "style": "normal",
+      "text": "In this study, the term refers to the module that manages products and suppliers, deducts sold quantities, restores quantities after voids, records adjustments, and identifies products at or below their configured threshold."
+    },
+    {
+      "index": 59,
+      "style": "normal",
+      "text": "Point-of-Sale (POS) System. Hardware and software used to process and record a sale at the place of purchase."
+    },
+    {
+      "index": 60,
+      "style": "normal",
+      "text": "In this study, the term refers to the cashier interface that selects products, accepts weighted or fixed quantities, applies supported statutory discounts, records cash received, computes change, and creates an invoice."
+    },
+    {
+      "index": 61,
+      "style": "normal",
+      "text": "Progressive Web Application (PWA). A web application that uses browser capabilities such as installation, caching, and background request handling to provide an application-like experience."
+    },
+    {
+      "index": 62,
+      "style": "normal",
+      "text": "In this study, the term refers to the SvelteKit frontend, which caches selected resources and can queue invoice requests when a network request fails."
+    },
+    {
+      "index": 63,
+      "style": "normal",
+      "text": "Role-Based Access Control (RBAC). A security method that grants permissions according to a user's assigned role."
+    },
+    {
+      "index": 64,
+      "style": "normal",
+      "text": "In this study, the term refers to the owner, manager, cashier, and auditor roles used to limit access to transaction, inventory, configuration, and audit functions."
+    },
+    {
+      "index": 65,
+      "style": "normal",
+      "text": "Web-Based Dashboard. A browser-accessible interface that summarizes operational data and provides navigation to system functions."
+    },
+    {
+      "index": 66,
+      "style": "normal",
+      "text": "In this study, the term refers to the interface that presents current sales, recent transactions, low-stock products, and sales trends obtained from the backend API."
+    },
+    {
+      "index": 67,
+      "style": "normal",
+      "text": "Significance of the Study"
+    },
+    {
+      "index": 68,
+      "style": "normal",
+      "text": "This study is significant to the following:"
+    },
+    {
+      "index": 69,
+      "style": "normal",
+      "text": "Business Owner. VDA Consumer Goods Trading may benefit from consolidated sales, stock, supplier, invoice, and compliance-support records that can be reviewed from one system."
+    },
+    {
+      "index": 70,
+      "style": "normal",
+      "text": "Customers. Customers may benefit from clearer transaction totals, recorded cash and change amounts, and a printable invoice containing the applicable sale details."
+    },
+    {
+      "index": 71,
+      "style": "normal",
+      "text": "Employees. Cashiers and managers may benefit from a consistent workflow for product selection, quantity entry, checkout, stock updates, voids, and report generation."
+    },
+    {
+      "index": 72,
+      "style": "normal",
+      "text": "Auditors and Accountants. Authorized reviewers may use invoice registers, readings, electronic-journal exports, statutory discount books, and the activity log when examining records."
+    },
+    {
+      "index": 73,
+      "style": "normal",
+      "text": "Researchers and Developers. The project provides a case study of a small-retail system that combines a modern web frontend, a Python API, relational data storage, offline request queuing, and compliance-oriented controls."
+    },
+    {
+      "index": 74,
+      "style": "normal",
+      "text": "Future Developers. The documented limitations identify clear areas for extension, including a complete scale bridge, stronger offline synchronization, conflict handling, backup restoration testing, and deployment-specific accreditation work."
+    },
+    {
+      "index": 75,
+      "style": "normal",
+      "text": "Scope and Limitations of the Study"
+    },
+    {
+      "index": 76,
+      "style": "normal",
+      "text": "This study covers the design and development of Upscale for VDA Consumer Goods Trading. The implemented system includes user authentication, role-based access, product and supplier management, weighted and fixed-price POS transactions, cash invoicing, inventory restocking and adjustment, stock deduction and void restoration, low-stock monitoring, sales dashboards, invoice search and export, X- and Z-Readings, an electronic journal, statutory discount records, and a hash-linked activity log."
+    },
+    {
+      "index": 77,
+      "style": "normal",
+      "text": "The production architecture uses a SvelteKit PWA deployed as a static frontend, a Flask REST API, and PostgreSQL through Supabase. The system currently supports cash payments only. Its offline feature queues failed invoice requests but does not provide complete offline operation, database synchronization, or conflict resolution. The physical scale requires a separate device-facing bridge, and the hosted architecture cannot reach store-local hardware without an additional integration method. Product tax classifications and discount procedures require validation by the business and its accountant. BIR registration, accreditation, machine identification, and Permit to Use processes remain external requirements."
+    },
+    {
+      "index": 79,
+      "style": "normal",
+      "text": "CHAPTER II"
+    },
+    {
+      "index": 80,
+      "style": "normal",
+      "text": "Review of Related Literature and Studies"
+    },
+    {
+      "index": 81,
+      "style": "normal",
+      "text": "This chapter reviews literature and studies related to MSME digitalization, inventory management, cloud-based POS adoption, and accountable retail recordkeeping. The discussion also identifies the gap addressed by Upscale."
+    },
+    {
+      "index": 82,
+      "style": "normal",
+      "text": "2.1 Foreign Related Literature"
+    },
+    {
+      "index": 83,
+      "style": "normal",
+      "text": "2.1.1 On MSME Digitalization and Small-Retail Systems"
+    },
+    {
+      "index": 84,
+      "style": "normal",
+      "text": "Fauzi and Sheng (2020) analyzed MSME digitalization through an institutional-theory perspective. Their work is relevant because it treats digital adoption as an organizational change influenced by the business environment, not merely as the purchase of software. For a small retailer, a useful system must fit existing work practices, available skills, cost constraints, and external reporting obligations."
+    },
+    {
+      "index": 85,
+      "style": "normal",
+      "text": "This perspective supports the use of an integrated system for VDA Consumer Goods Trading. Upscale reduces the need to maintain unrelated tools for checkout, inventory, invoices, and reports. However, integration also increases the importance of access control, reliable data storage, clear procedures, and user training because one system becomes responsible for several business processes."
+    },
+    {
+      "index": 86,
+      "style": "normal",
+      "text": "2.1.2 On Cloud-Based Point-of-Sale and Inventory Systems"
+    },
+    {
+      "index": 87,
+      "style": "normal",
+      "text": "Cloud-based POS systems allow transaction and inventory records to be stored in a central database and accessed through networked devices. Natividad et al. (2024) examined system quality and the acceptance of a cloud-based POS system for inventory management among micro food businesses. The study is directly relevant to Upscale because both contexts involve small food retailers that need transaction processing and stock monitoring in one system."
+    },
+    {
+      "index": 88,
+      "style": "normal",
+      "text": "Cloud deployment also introduces constraints. Availability depends on network access and the continued operation of the hosted frontend, API, database, and storage services. Upscale addresses short interruptions by caching selected frontend resources and queuing failed invoice requests. This mechanism improves continuity but does not replace complete offline synchronization, which requires retry policies, duplicate protection, and conflict resolution."
+    },
+    {
+      "index": 89,
+      "style": "normal",
+      "text": "2.2 Local Related Literature"
+    },
+    {
+      "index": 90,
+      "style": "normal",
+      "text": "2.2.1 On Inventory Management in Philippine Small Businesses"
+    },
+    {
+      "index": 91,
+      "style": "normal",
+      "text": "Gaborno et al. (2025) assessed 287 micro-business owners in Buenavista, Guimaras. The study reported generally high inventory-management practices but identified gaps in the use of systematic tracking tools and technology-driven inventory systems. Educational attainment, average monthly income, and capital investment were also associated with differences in inventory-management practice."
+    },
+    {
+      "index": 92,
+      "style": "normal",
+      "text": "These findings support a focused inventory design for a small provincial business. Upscale records stock changes from sales, voids, restocking, and manual adjustments. Requiring a reason for restocking and adjustment, and recording those actions in the activity log, makes stock changes easier to review than an unstructured manual count alone."
+    },
+    {
+      "index": 93,
+      "style": "normal",
+      "text": "2.2.2 On Point-of-Sale System Adoption among Philippine Small Businesses"
+    },
+    {
+      "index": 94,
+      "style": "normal",
+      "text": "Tronqued (2026) examined POS use among seven start-up cafes in Tabaco City, Albay. The study found frequent use of basic transaction functions but only partial use of inventory, analytics, and customer-management features. Reported benefits included shorter waiting times, improved accuracy, automated reporting, and real-time inventory tracking, while challenges included connectivity, downtime, compatibility, subscription costs, and staff training."
+    },
+    {
+      "index": 95,
+      "style": "normal",
+      "text": "The findings are relevant to Upscale because they show that adding functions does not guarantee effective use. The present system therefore emphasizes a direct cashier workflow, role-specific permissions, visible stock availability, and reports linked to ordinary transactions. Its limitations section also treats network dependence, device compatibility, and training as operational concerns rather than assuming that deployment alone resolves them."
+    },
+    {
+      "index": 96,
+      "style": "normal",
+      "text": "2.3 Foreign Related Studies"
+    },
+    {
+      "index": 97,
+      "style": "normal",
+      "text": "2.3.1 On System Quality, Adoption, and Operational Fit"
+    },
+    {
+      "index": 98,
+      "style": "normal",
+      "text": "Natividad et al. (2024) focused on the relationship between system quality and micro food businesses' acceptance of a cloud-based POS system for inventory management. The study supports evaluating a system not only by whether functions exist, but also by whether users can perform their work reliably and understand the resulting information."
+    },
+    {
+      "index": 99,
+      "style": "normal",
+      "text": "Upscale applies this principle through a responsive cashier interface, product search and category filters, server-side stock validation, automatic stock deduction, and dashboards that summarize current sales and low-stock items. These features align system functions with routine retail tasks while preserving the transaction details required for later review."
+    },
+    {
+      "index": 100,
+      "style": "normal",
+      "text": "2.3.2 On Traceable Digital Records"
+    },
+    {
+      "index": 101,
+      "style": "normal",
+      "text": "Digital recordkeeping is most useful when records remain organized, retrievable, and accountable. Upscale stores seller information with each invoice, preserves voided invoices, records reprints, and closes a business date after a Z-Reading. The system also links audit events through SHA-256 hashes so that the integrity-check function can identify a broken event chain."
+    },
+    {
+      "index": 102,
+      "style": "normal",
+      "text": "These controls support traceability but do not make the application legally compliant by default. Revenue Memorandum Order No. 24-2023 provides the BIR framework relevant to the registration of computerized accounting systems and their components. Accordingly, the system must still be configured with genuine taxpayer and machine information, reviewed against the applicable requirements, and submitted through the required registration process."
+    },
+    {
+      "index": 103,
+      "style": "normal",
+      "text": "2.4 Local Related Studies"
+    },
+    {
+      "index": 104,
+      "style": "normal",
+      "text": "2.4.1 On Inventory and POS Use in Philippine Micro-Businesses"
+    },
+    {
+      "index": 105,
+      "style": "normal",
+      "text": "The local studies reveal a consistent gap between recognizing the value of digital tools and using them systematically. Gaborno et al. (2025) identified limited use of technology-driven inventory tools, while Tronqued (2026) found that advanced POS functions were underused despite the operational benefits reported by participants."
+    },
+    {
+      "index": 106,
+      "style": "normal",
+      "text": "2.4.2 Synthesis and Research Gap"
+    },
+    {
+      "index": 107,
+      "style": "normal",
+      "text": "The reviewed literature supports digital transaction processing, inventory monitoring, and centralized records for small businesses. However, the cited studies do not address the exact combination required by VDA Consumer Goods Trading: products sold by weight, automatic stock movement from invoices and voids, role-based access, Philippine business-date reporting, statutory discount records, and BIR-oriented audit controls within one small-retail application."
+    },
+    {
+      "index": 108,
+      "style": "normal",
+      "text": "Upscale addresses this gap through a system designed around the business's transaction flow and the implemented web architecture. Its contribution is not a claim that every operational or regulatory problem has been solved. Rather, the project demonstrates how core POS, inventory, reporting, security, and traceability functions can be integrated while explicitly documenting the remaining scale-hardware, offline-synchronization, tax-validation, and accreditation requirements."
+    },
+    {
+      "index": 110,
+      "style": "normal",
+      "text": "CHAPTER III"
+    },
+    {
+      "index": 111,
+      "style": "normal",
+      "text": "Research Methodology"
+    },
+    {
+      "index": 112,
+      "style": "normal",
+      "text": "The development of Upscale followed the Adaptive Project Framework (APF), an iterative project approach described by Wysocki (2010) for work in which the goal is understood but the complete solution develops through repeated planning, construction, and review. APF was appropriate because the project had a stable operational objective but required technical decisions concerning the web architecture, transaction rules, inventory controls, reporting, deployment, and scale integration."
+    },
+    {
+      "index": 113,
+      "style": "normal",
+      "text": "The study used APF to divide the work into reviewable increments instead of attempting to complete the entire system in one linear sequence. Each increment was evaluated against the business process it supported and the behavior implemented in the application. This approach allowed the researchers to refine interfaces, database fields, permissions, and validation rules as dependencies between the POS, inventory, invoicing, and reporting modules became clearer."
+    },
+    {
+      "index": 114,
+      "style": "normal",
+      "text": "During Version Scope, the researchers defined the project outcome as a web-based system capable of processing weighted and fixed-price sales, updating inventory, preserving transaction records, and generating operational and compliance-support reports. The scope also identified important constraints: cash-only payment, network-dependent hosting, a separate scale bridge, and the need for external tax and BIR validation."
+    },
+    {
+      "index": 115,
+      "style": "normal",
+      "text": "During Cycle Plan, the requirements were organized into four development groups. The first covered authentication, roles, products, suppliers, and inventory. The second covered the cart, weighted and fixed quantities, cash checkout, invoice creation, stock deduction, and void restoration. The third covered tax classifications, statutory discounts, X- and Z-Readings, the electronic journal, exports, and the activity log. The fourth covered the PWA behavior, hosted deployment, image storage, and the provisional interface for a scale service."
+    },
+    {
+      "index": 116,
+      "style": "normal",
+      "text": "During Cycle Build, the researchers implemented the frontend with SvelteKit, TypeScript, Tailwind CSS, and reusable interface components. They implemented the backend as a Flask REST API using SQLAlchemy models, JSON Web Token authentication, database migrations, and PostgreSQL support. Server-side validation checks product data, stock availability, payment amounts, discount identifiers, user roles, duplicate Z-Readings, and transactions attempted after a business date has been closed."
+    },
+    {
+      "index": 117,
+      "style": "normal",
+      "text": "The Client Checkpoint for each increment consisted of reviewing whether the completed workflow matched the intended business action and whether the stored records were sufficient for the next module. Feedback and defects were returned to the next cycle. The repository also includes automated backend tests for product validation, invoice and discount behavior, stock protection, business-date handling, role permissions, readings, voids, and audit-chain integrity."
+    },
+    {
+      "index": 118,
+      "style": "normal",
+      "text": "During Post-Version Review, the researchers compared the completed application with the project objectives and documented the remaining work. The review identified the scale bridge, a secure store-to-cloud hardware connection, full offline synchronization, conflict handling, production backup and restoration procedures, final tax configuration, and BIR accreditation as work that must be completed or validated before the system can be treated as a production-ready accredited POS."
+    },
+    {
+      "index": 119,
+      "style": "normal",
+      "text": "Technicality of the Project"
+    },
+    {
+      "index": 120,
+      "style": "normal",
+      "text": "Upscale follows a client-server architecture. The browser-based frontend provides the cashier, inventory, supplier, invoice, report, dashboard, and settings interfaces. The Flask backend authenticates requests, applies business rules, reads and writes records, creates printable invoices and report exports, and exposes the endpoints used by the frontend."
+    },
+    {
+      "index": 121,
+      "style": "normal",
+      "text": "The frontend is a SvelteKit 5 progressive web application written in TypeScript and styled with Tailwind CSS. It is configured for static deployment and uses a service worker to cache the application shell and selected GET responses. IndexedDB stores failed invoice requests in a local queue and retries them after connectivity returns. This queue is limited to invoice creation and does not implement general two-way database synchronization."
+    },
+    {
+      "index": 122,
+      "style": "normal",
+      "text": "The backend uses Flask 3.1 with Flask-SQLAlchemy, Flask-Migrate, Flask-JWT-Extended, and Flask-CORS. It provides separate route groups for authentication, products, inventory, suppliers, invoices, readings, dashboards, compliance, and scale requests. Role checks distinguish owners, managers, cashiers, and auditors. Access and refresh tokens are revocable, and production secrets and allowed origins are supplied through environment variables."
+    },
+    {
+      "index": 123,
+      "style": "normal",
+      "text": "The data layer uses SQLite for local development and PostgreSQL for the hosted production design. Supabase provides the PostgreSQL service and product-image storage, while SQLAlchemy manages the application models. The production deployment places the static frontend on Vercel and the Flask API on Render. This arrangement separates the user interface, application logic, persistent data, and media storage."
+    },
+    {
+      "index": 124,
+      "style": "normal",
+      "text": "Details of the Technologies Used"
+    },
+    {
+      "index": 125,
+      "style": "normal",
+      "text": "SvelteKit and TypeScript. SvelteKit provides the application structure, routing, and static build for the frontend. TypeScript adds explicit data types and supports maintainable client-side logic. The interface includes product filtering, cart management, weighted quantity entry, cash checkout, invoice viewing, dashboard summaries, inventory controls, and report pages."
+    },
+    {
+      "index": 126,
+      "style": "normal",
+      "text": "Flask REST API. Flask provides the backend request routing and application services. The API performs authentication, authorization, validation, transaction processing, stock updates, report generation, and communication with the database. The frontend and backend exchange JSON data over HTTPS."
+    },
+    {
+      "index": 127,
+      "style": "normal",
+      "text": "SQLAlchemy and PostgreSQL. SQLAlchemy maps application records to relational tables for users, products, suppliers, invoices, invoice items, readings, electronic-journal entries, token revocations, and audit events. PostgreSQL is used in the production design, while migration scripts control schema changes."
+    },
+    {
+      "index": 128,
+      "style": "normal",
+      "text": "Supabase Storage. The backend can upload product images to a configured Supabase Storage bucket. When Supabase credentials are absent during local development, the application can store images in the Flask static directory."
+    },
+    {
+      "index": 129,
+      "style": "normal",
+      "text": "Progressive Web Application Tools. The frontend uses a web-app manifest, service-worker caching, and IndexedDB. These tools support installation and limited resilience during network interruptions. They do not make the complete hosted system independent of the network."
+    },
+    {
+      "index": 130,
+      "style": "normal",
+      "text": "Scale Service Interface. The Flask scale routes forward read, preview, and camera-feed requests to a service at localhost on the backend machine. The current scale-service file does not contain the device-reading implementation. In addition, a backend hosted on Render cannot use localhost to reach hardware in the store. Manual quantity entry therefore remains necessary until the device service and a secure deployment architecture for it are completed."
+    },
+    {
+      "index": 131,
+      "style": "normal",
+      "text": "How the Project Works"
+    },
+    {
+      "index": 132,
+      "style": "normal",
+      "text": "A user signs in through the SvelteKit interface. The backend verifies the credentials and issues access and refresh tokens. The assigned role determines whether the user may create sales, manage inventory, generate a Z-Reading, change settings, or inspect audit information."
+    },
+    {
+      "index": 133,
+      "style": "normal",
+      "text": "During a sale, the cashier selects a product. Fixed-price products enter the cart by unit, while weighted products require a quantity measured in kilograms or another configured unit. The quantity may be entered manually or obtained from the scale endpoint in a compatible local deployment. The frontend displays the expected line amount, but the backend retrieves the stored product price and recomputes all totals before saving the transaction."
+    },
+    {
+      "index": 134,
+      "style": "normal",
+      "text": "When the cashier confirms checkout, the backend locks the relevant records, verifies available stock, computes tax classifications and supported statutory discounts, assigns the next six-digit invoice number, stores the seller snapshot and invoice items, deducts stock, and writes electronic-journal and audit events. A void requires a reason, preserves the original invoice, restores stock, and is blocked after the corresponding business date has been closed by a Z-Reading."
+    },
+    {
+      "index": 135,
+      "style": "normal",
+      "text": "The dashboard and report modules retrieve the stored records by Philippine business date. Users with the required role can review invoices, export invoice and statutory-discount registers, generate X- and Z-Readings, export the electronic journal, and inspect the hash-linked activity log. These outputs support internal control and preparation for external review, but the business must still complete the applicable BIR registration and approval process."
+    },
+    {
+      "index": 137,
+      "style": "normal",
+      "text": "REFERENCES"
+    },
+    {
+      "index": 138,
+      "style": "normal",
+      "text": "Bureau of Internal Revenue. (2023). Revenue Memorandum Order No. 24-2023. https://bir-cdn.bir.gov.ph/local/pdf/RMO%20No.%2024-2023.pdf"
+    },
+    {
+      "index": 139,
+      "style": "normal",
+      "text": "Fauzi, A. A., & Sheng, M. L. (2020). The digitalization of micro, small, and medium-sized enterprises (MSMEs): An institutional theory perspective. Journal of Small Business Management, 60(6), 1288-1313. https://doi.org/10.1080/00472778.2020.1745536"
+    },
+    {
+      "index": 140,
+      "style": "normal",
+      "text": "Gaborno, J. A. B., Ernal, J. G. G., Gange, M. S. R. L., Mucho, J. G. P., Cariaga, K. G., Ibieza, D. B., Egael, L. J. J., & Gentapanan, R. G. (2025). Micro-business owners' inventory management practices. International Journal of Research and Innovation in Social Science, 9(9), 4550-4559. https://doi.org/10.47772/IJRISS.2025.909000373"
+    },
+    {
+      "index": 141,
+      "style": "normal",
+      "text": "Natividad, E. A. E., Musngi, A. M. M., Molinyawe, R. B., Rivera, E. A., Torres, R. C., & Moreno, D. E. L. (2024). System quality and micro food businesses' acceptance of the cloud-based point of sale system for inventory management. In Proceedings of the 2024 15th International Conference on E-business, Management and Economics (pp. 123-129). ACM. https://doi.org/10.1145/3691422.3691480"
+    },
+    {
+      "index": 142,
+      "style": "normal",
+      "text": "Tronqued, K. (2026). Point of sale system used by the start-up cafes in Tabaco City, Albay. Journal of Interdisciplinary Perspectives, 4(5), 125-141. https://doi.org/10.69569/jip.2026.128"
+    },
+    {
+      "index": 143,
+      "style": "normal",
+      "text": "Wysocki, R. K. (2010). Adaptive project framework: Managing complexity in the face of uncertainty. Addison-Wesley Professional."
+    }
+  ],
+  "tables": []
+}

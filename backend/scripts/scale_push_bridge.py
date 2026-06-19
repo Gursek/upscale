@@ -6,11 +6,25 @@ working Pi-side HTTP service and transfers stable readings to Upscale.
 
 from __future__ import annotations
 
+import argparse
 from datetime import datetime, timezone
+import json
 import os
 import time
 
 import requests
+
+
+def required_environment():
+    missing = [
+        name
+        for name in ("UPSCALE_SCALE_INGEST_URL", "SCALE_INGEST_API_KEY")
+        if not os.getenv(name)
+    ]
+    if not os.getenv("SCALE_USER_ID") and not os.getenv("SCALE_USER_EMAIL"):
+        missing.append("SCALE_USER_ID or SCALE_USER_EMAIL")
+    if missing:
+        raise ValueError(f"Missing required environment: {', '.join(missing)}")
 
 
 def build_payload(reading, *, user_id=None, user_email=None, device_id="raspberry-pi"):
@@ -31,6 +45,7 @@ def build_payload(reading, *, user_id=None, user_email=None, device_id="raspberr
 
 
 def transfer_once(session=requests):
+    required_environment()
     local_url = os.getenv("PI_SCALE_READ_URL", "http://127.0.0.1:5001/read")
     backend_url = os.environ["UPSCALE_SCALE_INGEST_URL"]
     api_key = os.environ["SCALE_INGEST_API_KEY"]
@@ -57,10 +72,15 @@ def transfer_once(session=requests):
         timeout=timeout,
     )
     result.raise_for_status()
-    return {"transferred": True, "response": result.json()}
+    return {
+        "transferred": True,
+        "weight_kg": payload["weight_kg"],
+        "device_id": payload["device_id"],
+        "response": result.json(),
+    }
 
 
-def main():
+def run_forever():
     interval = max(0.2, float(os.getenv("SCALE_PUSH_INTERVAL_SECONDS", "1")))
     retry_interval = max(interval, float(os.getenv("SCALE_RETRY_INTERVAL_SECONDS", "3")))
     while True:
@@ -70,6 +90,27 @@ def main():
         except (requests.RequestException, ValueError, KeyError) as exc:
             print(f"Scale transfer failed: {exc}", flush=True)
             time.sleep(retry_interval)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Transfer calibrated Raspberry Pi scale readings to UpScale."
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Transfer one reading, print the result, and exit.",
+    )
+    args = parser.parse_args()
+
+    if args.once:
+        try:
+            print(json.dumps(transfer_once(), indent=2), flush=True)
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            parser.exit(1, f"Scale transfer failed: {exc}\n")
+        return
+
+    run_forever()
 
 
 if __name__ == "__main__":

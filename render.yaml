@@ -36,3 +36,15 @@ services:
         sync: false
       - key: SMTP_FROM
         sync: false
+      - key: SCALE_INGEST_API_KEY
+        sync: false
+      - key: SCALE_INGEST_USER_ID
+        sync: false
+      - key: SCALE_DEVICE_ID
+        sync: false
+      - key: SCALE_MAX_AGE_SECONDS
+        value: 10
+      - key: SCALE_MAX_INGEST_AGE_SECONDS
+        value: 60
+      - key: SCALE_MAX_WEIGHT_KG
+        value: 300

@@ -5,13 +5,11 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { API_BASE, apiJson, revokeCurrentSession } from '$lib/api';
-	import { drainOfflineQueue, subscribeQueueCount } from '$lib/offline-queue';
+	import { drainOfflineQueue } from '$lib/offline-queue';
 	import { auth } from '$lib/stores/auth';
 
 	let { children } = $props();
 	let ready = $state(false);
-	let online = $state(true);
-	let queuedCount = $state(0);
 	const IDLE_TIMEOUT_MS = 8 * 60 * 60 * 1000;
 
 	onMount(() => {
@@ -32,13 +30,8 @@
 			}
 		}
 
-		online = navigator.onLine;
-		const unsubscribeQueue = subscribeQueueCount((count) => {
-			queuedCount = count;
-		});
 		const updateOnline = () => {
-			online = navigator.onLine;
-			if (online) {
+			if (navigator.onLine) {
 				void drainOfflineQueue(API_BASE, localStorage.getItem('access_token'));
 			}
 		};
@@ -82,7 +75,6 @@
 
 		return () => {
 			clearTimeout(idleTimer);
-			unsubscribeQueue();
 			window.removeEventListener('online', updateOnline);
 			window.removeEventListener('offline', updateOnline);
 			window.removeEventListener('mousemove', resetIdleTimer);
@@ -99,25 +91,6 @@
 </svelte:head>
 
 {#if ready}
-	<div
-		class="fixed bottom-3 right-3 z-80 flex items-center gap-2 rounded-full border bg-background/95 px-3 py-1.5 text-xs shadow-sm backdrop-blur"
-		role="status"
-		aria-live="polite"
-	>
-		<span
-			class="size-2 rounded-full {online ? 'bg-green-600' : queuedCount > 0 ? 'bg-amber-500' : 'bg-destructive'}"
-			aria-hidden="true"
-		></span>
-		<span>
-			{#if online}
-				Online{#if queuedCount > 0} · syncing {queuedCount}{/if}
-			{:else if queuedCount > 0}
-				Offline · {queuedCount} queued
-			{:else}
-				Offline
-			{/if}
-		</span>
-	</div>
 	{@render children()}
 {:else}
 	<div class="min-h-screen bg-muted/30 flex items-center justify-center px-4">

@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 import hmac
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 import requests
 
@@ -37,6 +37,19 @@ def _authorized_scale_push():
     return bool(configured) and hmac.compare_digest(configured, supplied)
 
 
+def _configured_scale_user():
+    configured_user_id = os.getenv("SCALE_INGEST_USER_ID")
+    configured_user_email = os.getenv("SCALE_INGEST_USER_EMAIL")
+    if configured_user_id:
+        try:
+            return db.session.get(User, int(configured_user_id))
+        except (TypeError, ValueError):
+            return None
+    if configured_user_email:
+        return User.query.filter_by(email=configured_user_email.strip().lower()).first()
+    return None
+
+
 @scale_bp.route("/readings", methods=["POST"])
 def ingest_scale_reading():
     """Receive a stable, calibrated reading pushed outward by the Raspberry Pi."""
@@ -44,25 +57,30 @@ def ingest_scale_reading():
         return jsonify({"error": "Invalid scale credentials"}), 401
 
     data = request.get_json(silent=True) or {}
-    user = None
-    configured_user_id = os.getenv("SCALE_INGEST_USER_ID")
-    configured_user_email = os.getenv("SCALE_INGEST_USER_EMAIL")
-    if configured_user_id:
-        try:
-            user = db.session.get(User, int(configured_user_id))
-        except (TypeError, ValueError):
-            user = None
-    elif configured_user_email:
-        user = User.query.filter_by(email=configured_user_email.strip().lower()).first()
-    elif data.get("user_id") is not None:
+    user = _configured_scale_user()
+    has_account_binding = bool(
+        os.getenv("SCALE_INGEST_USER_ID") or os.getenv("SCALE_INGEST_USER_EMAIL")
+    )
+    if (
+        os.getenv("FLASK_ENV") == "production"
+        and not current_app.config.get("TESTING")
+        and not has_account_binding
+    ):
+        return jsonify({"error": "Scale account binding is not configured"}), 503
+    if not has_account_binding and data.get("user_id") is not None:
         try:
             user = db.session.get(User, int(data["user_id"]))
         except (TypeError, ValueError):
             user = None
-    elif data.get("user_email"):
+    elif not has_account_binding and data.get("user_email"):
         user = User.query.filter_by(email=str(data["user_email"]).strip().lower()).first()
     if not user:
         return jsonify({"error": "Scale account was not found"}), 404
+
+    device_id = str(data.get("device_id") or "raspberry-pi").strip()[:100]
+    configured_device_id = (os.getenv("SCALE_DEVICE_ID") or "").strip()
+    if configured_device_id and not hmac.compare_digest(configured_device_id, device_id):
+        return jsonify({"error": "Scale device ID is not authorized"}), 401
 
     if data.get("stable") is False:
         return jsonify({"error": "Unstable scale readings are not accepted"}), 422
@@ -88,7 +106,7 @@ def ingest_scale_reading():
 
     reading = ScaleReading(
         user_id=user.id,
-        device_id=(str(data.get("device_id") or "raspberry-pi").strip()[:100]),
+        device_id=device_id,
         weight_kg=weight,
         captured_at=captured_at,
         received_at=now,

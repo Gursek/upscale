@@ -1,0 +1,15 @@
+[Unit]
+Description=UpScale HX711 local reading service
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/upscale/backend
+EnvironmentFile=/etc/upscale/hx711-service.env
+ExecStart=/opt/upscale/venv/bin/python /opt/upscale/backend/scripts/tatobari_hx711_service.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

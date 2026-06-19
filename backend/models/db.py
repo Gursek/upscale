@@ -8,3 +8,4 @@ from models.supplier import Supplier
 from models.invoice import Invoice, InvoiceItem
 from models.ejournal import EJournalEntry, XReading, ZReading
 from models.audit_log import AuditLog
+from models.scale_reading import ScaleReading

@@ -45,6 +45,9 @@
     let discountDraftIdNo = $state("");
     let lastInvoice = $state<any>(null);
     let lastCompletedInvoice = $state<any>(null);
+    let receiptHtml = $state("");
+    let receiptLoading = $state(false);
+    let receiptFrame = $state<HTMLIFrameElement | null>(null);
     let cashTendered = $state("");
     let buyerName = $state("");
     let buyerTin = $state("");
@@ -247,6 +250,22 @@
         checkoutDialogOpen = true;
     }
 
+    function setRetailQuantity(item: any, value: string) {
+        const quantity = Math.floor(Number(value));
+        if (!Number.isFinite(quantity) || quantity < 1) {
+            error = "Quantity must be at least 1";
+            setTimeout(() => error = "", 3000);
+            return false;
+        }
+        if (quantity > Number(item.stock_quantity)) {
+            error = `Only ${item.stock_quantity} ${item.unit} of ${item.name} available`;
+            setTimeout(() => error = "", 3000);
+            return false;
+        }
+        cart.setQuantity(item.product_id, quantity);
+        return true;
+    }
+
     function openDiscountDialog() {
         discountDraftType = discountType;
         discountDraftIdNo = discountIdNo;
@@ -320,6 +339,7 @@
             checkoutDialogOpen = false;
             receiptDialogOpen = true;
             resetOptionalCheckoutFields();
+            await loadReceiptPreview(invoice.id);
             await loadProducts(false);
             successMessage = `Invoice #${invoice.invoice_number} — ₱${Number(invoice.total_amount).toFixed(2)}`;
             setTimeout(() => successMessage = "", 5000);
@@ -333,23 +353,39 @@
     async function printLastReceipt() {
         if (!lastInvoice) return;
         try {
-            const response = await apiFetch(`/invoices/${lastInvoice.id}/print`);
-            const html = await response.text();
-            if (!response.ok) throw new Error("Could not load receipt");
-            const printWindow = window.open("", "_blank", "width=420,height=720");
-            if (!printWindow) throw new Error("Popup was blocked");
-            printWindow.document.open();
-            printWindow.document.write(html);
-            printWindow.document.close();
-            printWindow.focus();
+            if (!receiptHtml) await loadReceiptPreview(lastInvoice.id);
+            const previewWindow = receiptFrame?.contentWindow;
+            if (!previewWindow) throw new Error("Receipt preview is not ready");
+            previewWindow.focus();
+            previewWindow.print();
         } catch (e: any) {
             error = e.message || "Could not print receipt";
+        }
+    }
+
+    async function loadReceiptPreview(invoiceId: number) {
+        receiptLoading = true;
+        try {
+            const response = await apiFetch(`/invoices/${invoiceId}/print`);
+            const html = await response.text();
+            if (!response.ok) throw new Error("Could not load receipt preview");
+            receiptHtml = html.replace(
+                /<button onclick="window\.print\(\)">Print<\/button>/,
+                ""
+            );
+        } catch (e: any) {
+            receiptHtml = "";
+            error = e.message || "Could not load receipt preview";
+            setTimeout(() => error = "", 4000);
+        } finally {
+            receiptLoading = false;
         }
     }
 
     function nextTransaction() {
         receiptDialogOpen = false;
         lastInvoice = null;
+        receiptHtml = "";
         weightInputActive = false;
         selectedProduct = null;
         weightInput = "";
@@ -457,16 +493,6 @@
             </Button>
             <Button variant="ghost" size="icon" class="size-11 hover:bg-primary! hover:text-primary-foreground!" aria-label="BIR reports" onclick={() => goto("/reports")}>
                 <FileBarChart class="size-4" />
-            </Button>
-            <Button
-                variant="ghost"
-                size="icon"
-                class="size-11 hover:bg-destructive! hover:text-destructive-foreground!"
-                aria-label="Void last transaction"
-                onclick={openVoidLastTransaction}
-                disabled={!lastCompletedInvoice || lastCompletedInvoice.status === "voided"}
-            >
-                <Ban class="size-4" />
             </Button>
             <Button variant="ghost" size="icon" class="size-11 hover:bg-primary! hover:text-primary-foreground!" aria-label="Suppliers" onclick={() => goto("/suppliers")}>
                 <Users class="size-4" />
@@ -745,6 +771,17 @@
             <div class="px-4 py-3 border-b border-border flex items-center justify-between">
                 <h2 class="font-semibold text-sm flex items-center gap-1.5">
                     <ShoppingCart class="size-4" />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-9 hover:bg-destructive! hover:text-destructive-foreground!"
+                        aria-label="Void last transaction"
+                        title="Void last transaction"
+                        onclick={openVoidLastTransaction}
+                        disabled={!lastCompletedInvoice || lastCompletedInvoice.status === "voided"}
+                    >
+                        <Ban class="size-4" />
+                    </Button>
                     Cart
                     {#if cartItems.length > 0}
                         <span class="bg-primary text-primary-foreground text-[10px] font-bold
@@ -774,7 +811,7 @@
                 {:else}
                     <ul class="divide-y divide-border" aria-label="Cart items">
                         {#each cartItems as item (item.product_id)}
-                            <li class="px-4 py-3 flex items-start gap-3">
+                            <li class="flex flex-wrap items-start gap-3 px-4 py-3">
                                 <div class="text-base shrink-0">
                                     {categoryEmoji[item.category] ?? "📦"}
                                 </div>
@@ -784,7 +821,7 @@
                                         {item.quantity}{item.unit} × ₱{item.unit_cost.toFixed(2)}
                                     </p>
                                 </div>
-                                <div class="flex items-center gap-1.5 shrink-0">
+                                <div class="ml-auto flex shrink-0 items-center gap-1.5">
                                     {#if item.pricing_type === "fixed"}
                                         <Button
                                             variant="outline"
@@ -793,7 +830,23 @@
                                             onclick={() => cart.setQuantity(item.product_id, item.quantity - 1)}
                                             aria-label="Decrease {item.name} quantity"
                                         ><Minus class="size-3" /></Button>
-                                        <span class="w-5 text-center text-xs">{item.quantity}</span>
+                                        <Input
+                                            type="number"
+                                            min="1"
+                                            max={item.stock_quantity}
+                                            step="1"
+                                            value={item.quantity}
+                                            class="h-9 w-14 px-1 text-center text-xs"
+                                            aria-label="Quantity for {item.name}"
+                                            onchange={(event) => {
+                                                if (!setRetailQuantity(item, event.currentTarget.value)) {
+                                                    event.currentTarget.value = String(item.quantity);
+                                                }
+                                            }}
+                                            onkeydown={(event) => {
+                                                if (event.key === "Enter") event.currentTarget.blur();
+                                            }}
+                                        />
                                         <Button
                                             variant="outline"
                                             size="icon"
@@ -850,9 +903,8 @@
                 {:else}
                     <Button
                         type="button"
-                        variant="ghost"
-                        size="sm"
-                        class="h-8 w-full text-primary"
+                        variant="outline"
+                        class="h-11 w-full border-primary/40 bg-primary/5 font-semibold text-primary hover:bg-primary! hover:text-primary-foreground!"
                         onclick={openDiscountDialog}
                         disabled={cartItems.length === 0}
                     >
@@ -885,7 +937,7 @@
     <!-- Mobile: bottom cart action bar -->
     <div class="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
         <Sheet.Root bind:open={cartOpen}>
-            <div class="grid grid-cols-[1fr_auto] items-center gap-2">
+            <div class="grid grid-cols-[1fr_auto_auto] items-center gap-2">
                 <Sheet.Trigger>
                     <Button variant="outline" class="h-14 w-full justify-start gap-3 px-3" aria-label="Open cart, {itemCount} items, total ₱{payableTotal.toFixed(2)}">
                         <span class="relative">
@@ -902,6 +954,17 @@
                         </span>
                     </Button>
                 </Sheet.Trigger>
+                <Button
+                    variant="outline"
+                    size="icon"
+                    class="size-14 border-destructive/30 text-destructive hover:bg-destructive! hover:text-destructive-foreground!"
+                    aria-label="Void last transaction"
+                    title="Void last transaction"
+                    onclick={openVoidLastTransaction}
+                    disabled={!lastCompletedInvoice || lastCompletedInvoice.status === "voided"}
+                >
+                    <Ban class="size-5" />
+                </Button>
                 <Button class="h-14 px-5" onclick={beginCheckout} disabled={cartItems.length === 0 || checkoutLoading}>
                     Charge
                 </Button>
@@ -936,19 +999,35 @@
                     {:else}
                         <ul class="divide-y divide-border">
                             {#each cartItems as item (item.product_id)}
-                                <li class="py-3 flex items-start gap-3">
+                                <li class="flex flex-wrap items-start gap-3 py-3">
                                     <div class="flex-1 min-w-0">
                                         <p class="font-medium text-sm">{item.name}</p>
                                         <p class="text-muted-foreground text-xs mt-0.5">
                                             {item.quantity}{item.unit} × ₱{item.unit_cost.toFixed(2)}
                                         </p>
                                     </div>
-                                    <div class="flex items-center gap-2 shrink-0">
+                                    <div class="ml-auto flex shrink-0 items-center gap-2">
                                         {#if item.pricing_type === "fixed"}
                                             <Button variant="outline" size="icon" class="size-11" onclick={() => cart.setQuantity(item.product_id, item.quantity - 1)} aria-label="Decrease {item.name}">
                                                 <Minus class="size-4" />
                                             </Button>
-                                            <span class="text-xs">{item.quantity}</span>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                max={item.stock_quantity}
+                                                step="1"
+                                                value={item.quantity}
+                                                class="h-11 w-16 px-1 text-center text-sm"
+                                                aria-label="Quantity for {item.name}"
+                                                onchange={(event) => {
+                                                    if (!setRetailQuantity(item, event.currentTarget.value)) {
+                                                        event.currentTarget.value = String(item.quantity);
+                                                    }
+                                                }}
+                                                onkeydown={(event) => {
+                                                    if (event.key === "Enter") event.currentTarget.blur();
+                                                }}
+                                            />
                                             <Button variant="outline" size="icon" class="size-11" onclick={() => cart.setQuantity(item.product_id, item.quantity + 1)} disabled={item.quantity >= item.stock_quantity} aria-label="Increase {item.name}">
                                                 <Plus class="size-4" />
                                             </Button>
@@ -1003,7 +1082,7 @@
                         <Button
                             type="button"
                             variant="outline"
-                            class="w-full"
+                            class="h-11 w-full border-primary/40 bg-primary/5 font-semibold text-primary hover:bg-primary! hover:text-primary-foreground!"
                             onclick={openDiscountDialog}
                             disabled={cartItems.length === 0}
                         >
@@ -1244,44 +1323,39 @@
 </Dialog.Root>
 
 <Dialog.Root bind:open={receiptDialogOpen}>
-    <Dialog.Content class="max-w-md">
+    <Dialog.Content class="flex max-h-[92dvh] max-w-2xl grid-rows-[auto_1fr_auto] flex-col overflow-hidden">
         <Dialog.Header>
             <Dialog.Title>Receipt Preview</Dialog.Title>
-            <Dialog.Description>Review the completed sale, then print or start the next transaction.</Dialog.Description>
+            <Dialog.Description>This is the same receipt layout that will be sent to the printer.</Dialog.Description>
         </Dialog.Header>
 
-        {#if lastInvoice}
-            <div class="rounded-xl border bg-background p-4 font-mono text-xs space-y-3">
-                <div class="text-center border-b pb-3">
-                    <p class="font-bold text-sm">{lastInvoice.seller?.business_name ?? user?.business_name}</p>
-                    <p>Invoice #{lastInvoice.display_invoice_number ?? lastInvoice.invoice_number}</p>
-                    <p>{new Date(lastInvoice.date_time).toLocaleString("en-PH", { timeZone: "Asia/Manila" })}</p>
+        <div class="min-h-0 flex-1 overflow-hidden rounded-xl border bg-muted/30 p-2">
+            {#if receiptLoading}
+                <div class="flex h-[55dvh] items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 class="size-5 animate-spin" />
+                    <span>Preparing receipt preview...</span>
                 </div>
-                <ul class="space-y-2">
-                    {#each lastInvoice.items as item}
-                        <li>
-                            <div class="flex justify-between gap-3">
-                                <span>{item.description}</span>
-                                <span>PHP {Number(item.line_total).toFixed(2)}</span>
-                            </div>
-                            <p class="text-muted-foreground">{Number(item.quantity).toFixed(3)} x PHP {Number(item.unit_cost).toFixed(2)}</p>
-                        </li>
-                    {/each}
-                </ul>
-                <Separator />
-                <div class="space-y-1">
-                    <div class="flex justify-between"><span>Subtotal</span><span>PHP {Number(lastInvoice.subtotal).toFixed(2)}</span></div>
-                    <div class="flex justify-between"><span>Discount</span><span>PHP {Number(lastInvoice.discount_amount).toFixed(2)}</span></div>
-                    <div class="flex justify-between font-bold text-sm"><span>Total</span><span>PHP {Number(lastInvoice.total_amount).toFixed(2)}</span></div>
-                    <div class="flex justify-between"><span>Cash</span><span>PHP {Number(lastInvoice.cash_tendered).toFixed(2)}</span></div>
-                    <div class="flex justify-between"><span>Change</span><span>PHP {Number(lastInvoice.change_amount).toFixed(2)}</span></div>
+            {:else if receiptHtml}
+                <iframe
+                    bind:this={receiptFrame}
+                    title="Receipt print preview"
+                    srcdoc={receiptHtml}
+                    class="h-[55dvh] w-full rounded-lg bg-white"
+                ></iframe>
+            {:else}
+                <div class="flex h-[55dvh] flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+                    <ReceiptText class="size-8 opacity-40" />
+                    <p>Receipt preview could not be loaded.</p>
+                    {#if lastInvoice}
+                        <Button variant="outline" onclick={() => loadReceiptPreview(lastInvoice.id)}>Try Again</Button>
+                    {/if}
                 </div>
-            </div>
-        {/if}
+            {/if}
+        </div>
 
         <Dialog.Footer>
             <Button variant="outline" onclick={nextTransaction}>Next Transaction</Button>
-            <Button onclick={printLastReceipt}>Print Receipt</Button>
+            <Button onclick={printLastReceipt} disabled={receiptLoading || !receiptHtml}>Print Receipt</Button>
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>

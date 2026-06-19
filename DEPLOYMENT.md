@@ -34,6 +34,7 @@ Set these backend variables on Render:
 ```env
 SCALE_INGEST_API_KEY=<long-random-device-secret>
 SCALE_INGEST_USER_ID=<owner-user-id>
+SCALE_DEVICE_ID=pi-vda-01
 SCALE_MAX_AGE_SECONDS=10
 SCALE_MAX_INGEST_AGE_SECONDS=60
 SCALE_MAX_WEIGHT_KG=300
@@ -54,6 +55,9 @@ SCALE_TRANSFER_TIMEOUT_SECONDS=3
 Run the bridge under `systemd` or another process supervisor. The POS accepts
 only the latest reading within `SCALE_MAX_AGE_SECONDS`; older readings return a
 stale-reading error instead of being applied to a sale.
+
+The complete calibration, one-shot transfer test, and `systemd` installation
+steps are in `RASPBERRY_PI_SCALE.md`.
 
 ## Supabase
 

@@ -1,10 +1,13 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
 import os
 from unittest.mock import patch
 
 from app import create_app
 from models.db import db
+from scripts.hx711_calibration import calibration_factor
 from scripts.scale_push_bridge import transfer_once
+from scripts.tatobari_hx711_service import ScaleState, reading_summary
 
 
 def _app():
@@ -81,6 +84,47 @@ def test_push_rejects_bad_credentials_and_unstable_readings():
 
 @patch.dict(os.environ, {
     "SCALE_INGEST_API_KEY": "test-scale-secret",
+    "SCALE_DEVICE_ID": "pi-vda-01",
+}, clear=False)
+def test_push_rejects_unexpected_device_id():
+    app = _app()
+    client = app.test_client()
+    registered, _ = _register(client)
+
+    response = client.post("/api/scale/readings", headers={
+        "X-Scale-Key": "test-scale-secret",
+    }, json={
+        "user_id": registered["user"]["id"],
+        "device_id": "unknown-device",
+        "weight_kg": 1,
+    })
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "Scale device ID is not authorized"
+
+
+@patch.dict(os.environ, {
+    "FLASK_ENV": "production",
+    "SCALE_INGEST_API_KEY": "test-scale-secret",
+    "SCALE_INGEST_USER_ID": "",
+    "SCALE_INGEST_USER_EMAIL": "",
+}, clear=False)
+def test_production_push_requires_account_binding():
+    app = _app()
+    app.config["TESTING"] = False
+    client = app.test_client()
+
+    response = client.post("/api/scale/readings", headers={
+        "X-Scale-Key": "test-scale-secret",
+    }, json={
+        "device_id": "pi-vda-01",
+        "weight_kg": 1,
+    })
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "Scale account binding is not configured"
+
+
+@patch.dict(os.environ, {
+    "SCALE_INGEST_API_KEY": "test-scale-secret",
     "SCALE_MAX_AGE_SECONDS": "2",
     "SCALE_MAX_INGEST_AGE_SECONDS": "60",
 }, clear=False)
@@ -153,3 +197,38 @@ def test_bridge_transfers_existing_pi_service_contract():
     assert session.posted["json"]["weight_kg"] == 2.125
     assert session.posted["json"]["user_id"] == 7
     assert session.posted["headers"]["X-Scale-Key"] == "device-secret"
+
+
+def test_hx711_calibration_factor_and_formula():
+    factor = calibration_factor(1000, 51000, 5)
+    assert factor == 10000
+    assert factor / Decimal("1000") == 10
+    assert (Decimal("26000") - Decimal("1000")) / factor == Decimal("2.5")
+
+
+def test_tatobari_adapter_marks_only_tight_sample_window_stable():
+    stable = reading_summary(
+        [1.001, 1.004, 1.003, 1.002, 1.004, 1.003],
+        tolerance_kg=0.010,
+        minimum_samples=6,
+    )
+    assert stable["stable"] is True
+    assert stable["weight_kg"] == 1.003
+
+    moving = reading_summary(
+        [1.0, 1.03, 1.08, 1.12, 1.15, 1.2],
+        tolerance_kg=0.010,
+        minimum_samples=6,
+    )
+    assert moving["stable"] is False
+
+
+def test_tatobari_adapter_state_exposes_bridge_contract():
+    state = ScaleState(window_size=6, tolerance_kg=0.010, minimum_samples=6)
+    for value in [0.499, 0.501, 0.500, 0.502, 0.500, 0.501]:
+        state.record(value)
+
+    snapshot = state.snapshot()
+    assert snapshot["weight_kg"] == 0.5
+    assert snapshot["stable"] is True
+    assert snapshot["captured_at"].endswith("Z")

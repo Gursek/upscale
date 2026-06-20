@@ -425,6 +425,8 @@
             };
             if (!isEditing) {
                 payload.stock_quantity = parseFloat(form.stock_quantity || "0");
+            } else {
+                delete payload.stock_quantity;
             }
             if (isEditing) {
                 await apiJson(`/products/${selectedProduct.id}`, {

@@ -626,7 +626,13 @@
                                                 {cartQuantity(product.id)} in cart
                                             </span>
                                         {/if}
-                                        {#if product.stock_quantity <= product.low_stock_threshold && product.low_stock_threshold > 0}
+                                        {#if availableStock(product) <= 0}
+                                            <div class="absolute top-1.5 right-1.5">
+                                                <span class="rounded bg-destructive px-1.5 py-0.5 text-[9px] font-bold text-destructive-foreground">
+                                                    OUT OF STOCK
+                                                </span>
+                                            </div>
+                                        {:else if availableStock(product) <= Number(product.low_stock_threshold) && Number(product.low_stock_threshold) > 0}
                                             <div class="absolute top-1.5 right-1.5">
                                                 <span class="bg-destructive text-destructive-foreground text-[9px] font-bold px-1 py-0.5 rounded">
                                                     LOW

@@ -671,16 +671,18 @@
                     <div class="mx-auto flex max-w-2xl flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3">
 
                         <!-- Product info -->
-                        <div class="min-w-0 flex-1 sm:flex-none">
-                            <p class="font-semibold text-sm leading-tight truncate max-w-35">
-                                {selectedProduct.name}
-                            </p>
-                            <p class="text-muted-foreground text-xs">₱{selectedProduct.price}/kg</p>
-                        </div>
+			<div class="w-28 min-w-0 shrink-0 sm:w-36">
+				<p class="w-full truncate text-sm leading-tight font-semibold">
+					{selectedProduct.name}
+				</p>
+				<p class="text-muted-foreground text-xs">₱{selectedProduct.price}/kg</p>
+			</div>
 
-                        <!-- Weight input -->
-                        <div class="order-3 flex w-full items-center gap-2 sm:order-none sm:w-auto sm:flex-1">
-                            <div class="relative flex-1">
+			<!-- Weight input -->
+			<div
+				class="order-3 flex w-full min-w-0 items-center gap-2 sm:order-none sm:w-auto sm:min-w-72 sm:flex-1"
+			>
+				<div class="relative min-w-32 flex-1">
                                 <input
                                     bind:this={weightInputElement}
                                     type="number"

@@ -752,6 +752,7 @@
 
                             <!-- Add to cart -->
                             <Button
+                                onpointerdown={(event) => event.preventDefault()}
                                 onclick={addToCart}
                                 disabled={!weightInput || parseFloat(weightInput) <= 0 || parseFloat(weightInput) > Number(selectedProduct.stock_quantity)}
                                 class="h-11 shrink-0 px-4"

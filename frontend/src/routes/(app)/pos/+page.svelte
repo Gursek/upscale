@@ -668,7 +668,7 @@
                             ? 'bottom-[max(6rem,calc(50dvh-7rem))] rounded-t-2xl shadow-2xl'
                             : 'bottom-[5.25rem] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] lg:bottom-0'}"
                     aria-live="polite">
-                    <div class="mx-auto flex max-w-2xl flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3">
+                    <div class="mx-auto flex max-w-2xl flex-wrap items-center gap-2 sm:gap-3">
 
                         <!-- Product info -->
 			<div class="w-28 min-w-0 shrink-0 sm:w-36">
@@ -680,7 +680,7 @@
 
 			<!-- Weight input -->
 			<div
-				class="order-3 flex w-full min-w-0 items-center gap-2 sm:order-none sm:w-auto sm:min-w-72 sm:flex-1"
+				class="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:min-w-72 sm:flex-1"
 			>
 				<div class="relative min-w-32 flex-1">
                                 <input
@@ -741,34 +741,36 @@
                             </Button>
                         </div>
 
-                        <!-- Price preview -->
-                        <div class="shrink-0 text-right min-w-20">
-                            <p class="text-xs text-muted-foreground">Total</p>
-                            <p class="font-bold text-primary text-base">
-                                ₱{computedPrice().toFixed(2)}
-                            </p>
+                        <div class="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+                            <!-- Price preview -->
+                            <div class="min-w-20 shrink-0 text-right">
+                                <p class="text-xs text-muted-foreground">Total</p>
+                                <p class="text-base font-bold text-primary">
+                                    ₱{computedPrice().toFixed(2)}
+                                </p>
+                            </div>
+
+                            <!-- Add to cart -->
+                            <Button
+                                onclick={addToCart}
+                                disabled={!weightInput || parseFloat(weightInput) <= 0 || parseFloat(weightInput) > Number(selectedProduct.stock_quantity)}
+                                class="h-11 shrink-0 px-4"
+                                aria-label="Add {selectedProduct.name} to cart"
+                            >
+                                <Plus class="mr-1 size-4" />
+                                Add
+                            </Button>
+
+                            <!-- Dismiss -->
+                            <button
+                                onclick={clearSelected}
+                                aria-label="Cancel selection"
+                                class="flex size-11 items-center justify-center rounded text-muted-foreground transition-colors
+                                    hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                                <X class="size-4" />
+                            </button>
                         </div>
-
-                        <!-- Add to cart -->
-                        <Button
-                            onclick={addToCart}
-                            disabled={!weightInput || parseFloat(weightInput) <= 0 || parseFloat(weightInput) > Number(selectedProduct.stock_quantity)}
-                            class="h-11 shrink-0 px-4"
-                            aria-label="Add {selectedProduct.name} to cart"
-                        >
-                            <Plus class="size-4 mr-1" />
-                            Add
-                        </Button>
-
-                        <!-- Dismiss -->
-                        <button
-                            onclick={clearSelected}
-                            aria-label="Cancel selection"
-                            class="flex size-11 items-center justify-center text-muted-foreground hover:text-foreground transition-colors
-                                focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
-                        >
-                            <X class="size-4" />
-                        </button>
                     </div>
                 </div>
             {/if}
